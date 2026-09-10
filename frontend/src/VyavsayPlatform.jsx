@@ -1,3 +1,4 @@
+import TemplatesWorkspace from "./TemplatesWorkspace.jsx";
 import PaymentsWorkspace from "./PaymentsWorkspace.jsx";
 import ValidationWorkspace from "./ValidationWorkspace.jsx";
 import ScaleUpWorkspace from "./ScaleUpWorkspace.jsx";
@@ -415,15 +416,7 @@ const PAYMENTS = [
   { startup: "NirogStream", milestone: "M3 — Report submission", amt: "₹2,80,000", status: "Invoice Uploaded", days: "1 day" },
 ];
 
-const TEMPLATES = [
-  { name: "Outcome-Based Problem Statement", cat: "Challenge Design", v: "v3.2", approved: true, updated: "18 Aug 2026" },
-  { name: "Evaluation Scoring Rubric", cat: "Evaluation", v: "v2.0", approved: true, updated: "02 Jul 2026" },
-  { name: "Pilot / Sandbox Agreement", cat: "Contracting", v: "v4.1", approved: true, updated: "29 Aug 2026" },
-  { name: "Data & IP Ownership Clauses", cat: "Legal", v: "v2.4", approved: true, updated: "11 Aug 2026" },
-  { name: "Cybersecurity Requirements Checklist", cat: "Security", v: "v1.6", approved: true, updated: "05 Jun 2026" },
-  { name: "Risk Management Framework", cat: "Risk", v: "v1.3", approved: false, updated: "22 May 2026" },
-  { name: "Procurement Pathway Selector", cat: "Procurement", v: "v2.1", approved: true, updated: "14 Aug 2026" },
-];
+
 
 const NAV = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -703,10 +696,10 @@ function Overview({ onEnter }) {
             <FileCheck2 size={17} color="#fff" />
           </div>
           <div style={{ fontSize: 12, lineHeight: 1.45, opacity: 0.95 }}>
-            Built on standard, legally-cleared templates for problem statements, evaluation, pilot agreements, data/IP, cybersecurity, risk and procurement pathways.
+            Standard templates for problem statements, evaluation, pilot agreements, data/IP, cybersecurity, risk and procurement pathways, with authorised review before use.
           </div>
         </div>
-        <Btn variant="secondary" small icon={Library} onClick={() => onEnter("Government Official")} style={{ background: "#fff", color: C.ink, borderColor: "#fff", flexShrink: 0 }}>Browse the template library →</Btn>
+        <Btn variant="secondary" small icon={Library} onClick={() => onEnter("Government Official", "templates")} style={{ background: "#fff", color: C.ink, borderColor: "#fff", flexShrink: 0 }}>Browse the template library →</Btn>
       </div>
       </div>
       <Footer />
@@ -776,7 +769,7 @@ export default function App() {
 
   const goDetail = (ch) => { setSelectedChallenge(ch); setView("challenge-detail"); };
 
-  const enterAs = (r) => { setRole(r); setEntered(true); };
+  const enterAs = (r, nextView) => { setRole(r); if (nextView) setView(nextView); setEntered(true); };
 
   if (!entered) {
     return (
@@ -788,7 +781,7 @@ export default function App() {
   }
 
   return (
-    <div style={{ background: C.paper, minHeight: "100vh", color: C.ink, fontFamily: BODY_FONT, fontSize: 14, display: "flex" }}>
+    <div className={view === "templates" ? "templates-shell" : undefined} style={{ background: C.paper, minHeight: "100vh", color: C.ink, fontFamily: BODY_FONT, fontSize: 14, display: "flex" }}>
       <style>{FONT_IMPORT}</style>
       {/* SIDEBAR */}
       <aside style={{ width: 216, flexShrink: 0, borderRight: `1px solid ${C.line}`, background: "#FAFDFF", position: "sticky", top: 0, height: "100vh", display: "flex", flexDirection: "column" }}>
@@ -835,15 +828,15 @@ export default function App() {
           <div style={{ flex: 1 }} />
           <Bell size={17} color={C.inkSoft} style={{ cursor: "pointer" }} />
           <div style={{ position: "relative" }}>
-            <div onClick={() => { if (!["payments", "validation", "scaleup"].includes(view)) setRoleMenuOpen((s) => !s); }}
+            <div onClick={() => { if (!["payments", "validation", "scaleup", "templates"].includes(view)) setRoleMenuOpen((s) => !s); }}
               style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer", border: `1px solid ${C.line}`, borderRadius: 4, padding: "6px 10px" }}>
               <div style={{ width: 22, height: 22, borderRadius: "50%", background: C.brassSoft, color: C.brass, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700 }}>
-                {["payments", "validation", "scaleup"].includes(view) ? "W" : role[0]}
+                {["payments", "validation", "scaleup", "templates"].includes(view) ? "W" : role[0]}
               </div>
-              <div style={{ fontSize: 12.5, fontWeight: 600 }}>{["payments", "validation", "scaleup"].includes(view) ? "Select account in workspace" : role}</div>
-              {!["payments", "validation", "scaleup"].includes(view) && <ChevronDown size={14} color={C.inkSoft} />}
+              <div style={{ fontSize: 12.5, fontWeight: 600 }}>{["payments", "validation", "scaleup", "templates"].includes(view) ? "Select account in workspace" : role}</div>
+              {!["payments", "validation", "scaleup", "templates"].includes(view) && <ChevronDown size={14} color={C.inkSoft} />}
             </div>
-            {!["payments", "validation", "scaleup"].includes(view) && roleMenuOpen && (
+            {!["payments", "validation", "scaleup", "templates"].includes(view) && roleMenuOpen && (
               <div style={{ position: "absolute", right: 0, top: 38, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 5, width: 200, boxShadow: "0 6px 18px rgba(20,33,61,0.1)", zIndex: 20 }}>
                 <div style={{ padding: "8px 12px", fontSize: 10.5, color: C.inkSoft, fontWeight: 700, borderBottom: `1px solid ${C.line}` }}>VIEW PLATFORM AS</div>
                 {ROLES.map((r) => (
@@ -869,7 +862,7 @@ export default function App() {
           {view === "payments" && <PaymentsWorkspace />}
           {view === "validation" && <ValidationWorkspace onPayments={() => setView("payments")} />}
           {view === "scaleup" && <ScaleUpWorkspace onValidation={() => setView("validation")} />}
-          {view === "templates" && <Templates />}
+          {view === "templates" && <TemplatesWorkspace />}
           {view === "admin" && <Admin />}
         </main>
       </div>
@@ -2508,42 +2501,6 @@ function ScaleUp() {
             <Btn variant="brass" small icon={TrendingUp}>Approve Scale-Up</Btn>
           </div>
         </div>
-      </Card>
-    </div>
-  );
-}
-
-/* ---------------------------------------------------------------------- */
-/*  TEMPLATES                                                              */
-/* ---------------------------------------------------------------------- */
-function Templates() {
-  return (
-    <div>
-      <SectionTitle eyebrow="STANDARDISED & LEGALLY CLEARED" title="Template Library" right={<Btn variant="secondary" icon={Filter} small>Category · Approval status</Btn>} />
-      <Card noPad>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-          <thead>
-            <tr style={{ textAlign: "left", color: C.inkSoft, fontSize: 11 }}>
-              {["Template", "Category", "Version", "Legal status", "Last updated", ""].map((h) => <th key={h} style={{ padding: "10px 14px" }}>{h}</th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {TEMPLATES.map((t) => (
-              <tr key={t.name} style={{ borderTop: `1px solid ${C.line}` }}>
-                <td style={{ padding: "12px 14px", fontWeight: 600, display: "flex", alignItems: "center", gap: 7 }}><ScrollText size={14} color={C.brass} /> {t.name}</td>
-                <td style={{ padding: "12px 14px", color: C.inkSoft }}>{t.cat}</td>
-                <td style={{ padding: "12px 14px", ...mono, fontSize: 12 }}>{t.v}</td>
-                <td style={{ padding: "12px 14px" }}>
-                  {t.approved
-                    ? <span style={{ display: "flex", alignItems: "center", gap: 5, color: C.teal, fontWeight: 600, fontSize: 12 }}><BadgeCheck size={14} /> Approved</span>
-                    : <span style={{ display: "flex", alignItems: "center", gap: 5, color: C.brass, fontWeight: 600, fontSize: 12 }}><Clock size={14} /> Pending review</span>}
-                </td>
-                <td style={{ padding: "12px 14px", color: C.inkSoft }}>{t.updated}</td>
-                <td style={{ padding: "12px 14px" }}><Btn small variant="secondary">Use template</Btn></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </Card>
     </div>
   );

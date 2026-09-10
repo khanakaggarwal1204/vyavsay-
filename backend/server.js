@@ -1,10 +1,13 @@
 import express from 'express';
-import apiRouter, { setPaymentProjection, setValidationGate } from './src/routes.js';
+import apiRouter, { setPaymentProjection, setValidationGate, setTemplateGate } from './src/routes.js';
 import { readDB, writeDB } from './src/db.js';
 import { createPaymentService } from './src/payment/service.js';
 import { createValidationService } from './src/validation/service.js';
 import { createScaleUpService } from './src/scaleup/service.js';
+import { createTemplateService } from './src/templates/service.js';
 const app=express();
+const templates=createTemplateService({readSource:readDB,writeSource:writeDB});
+setTemplateGate(templates.securityGate);
 const payments=createPaymentService({readSource:readDB});
 setPaymentProjection(payments.projectContract);
 const validation=createValidationService({readSource:readDB,readPayments:()=>{payments.sync();return payments.store.read();}});
@@ -12,6 +15,8 @@ setValidationGate(validation.gateForDesign);
 const scaleup=createScaleUpService({readSource:readDB,readValidation:validation.scaleUpInputs,applyHandoff(h,packet){
   const db=readDB(),pd=(db.pilotDesigns||[]).find(p=>p.id===packet.pilotDesignId);
   if(!pd)throw Error('Linked pilot design missing.');
+  const security=templates.securityGate(pd.challengeId,pd.startupId);
+  if(!security.eligible)throw Error(security.reasons.join(' '));
   if(pd.scaleUpAuthorization?.handoffId===h.id)return;
   const index=pd.phases.findIndex(p=>p.status==='Active');
   if(index<0||pd.phases[index+1]?.key!=='live')throw Error('Field pilot must be active before live handover.');
@@ -20,6 +25,7 @@ const scaleup=createScaleUpService({readSource:readDB,readValidation:validation.
   writeDB(db);
 }});
 app.use(express.json({limit:'1600kb'}));
+app.use('/api/templates',templates.router);
 app.use('/api/payments',payments.router);
 app.use('/api/validation',validation.router);
 app.use('/api/scale-up',scaleup.router);
@@ -27,5 +33,5 @@ app.use('/api',apiRouter);
 app.use((err,_req,res,_next)=>res.status(err.status||500).json({error:err.status===413?'Upload too large. Maximum file size is 1 MB.':'Request could not be processed.'}));
 const port=process.env.PORT||4001;
 const server=app.listen(port,'127.0.0.1',()=>console.log(`Vyavsay listening at http://127.0.0.1:${port} (local seed-connected payment demo)`));
-function shutdown(){server.close(()=>{scaleup.close();payments.close();validation.close();process.exit(0);});}
+function shutdown(){server.close(()=>{templates.close();scaleup.close();payments.close();validation.close();process.exit(0);});}
 process.on('SIGTERM',shutdown);process.on('SIGINT',shutdown);

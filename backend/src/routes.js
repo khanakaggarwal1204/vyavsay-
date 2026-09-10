@@ -12,6 +12,8 @@ import { validatePilotDesign, createPilotDesign, advancePhase } from "./pilotDes
 const router = Router();
 let paymentProjection = c => c;
 let validationGate = () => ({eligible:false,reasons:['Validation service unavailable.']});
+let templateGate = () => ({eligible:false,reasons:['Cybersecurity review service unavailable.']});
+export function setTemplateGate(fn) { templateGate = fn; }
 export function setValidationGate(fn) { validationGate = fn; }
 export function setPaymentProjection(fn) { paymentProjection = fn; }
 
@@ -455,6 +457,10 @@ router.post("/pilot-design/:id/advance", (req, res) => {
   if (!pd) return res.status(404).json({ error: "Pilot design not found" });
 
   const active = pd.phases.findIndex(p => p.status === 'Active');
+  if (pd.phases[active + 1]?.key === 'field') {
+    const security = templateGate(pd.challengeId, pd.startupId);
+    if (!security.eligible) return res.status(409).json({error:security.reasons.join(' ')});
+  }
   if (pd.phases[active + 1]?.key === 'live') {
     return res.status(409).json({error:'Use the authorised Scale-Up workspace handover. Independent validation alone cannot activate live rollout.'});
   }
