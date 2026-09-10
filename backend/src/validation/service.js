@@ -45,7 +45,14 @@ export function createValidationService({readSource,readPayments,filename,interv
     });res.json(output(req.actor));
   }catch(e){next(e);}});
   router.use((err,_req,res,_next)=>{if(!(err instanceof ValidationError))console.error('Validation:',err.message);res.status(err.status||500).json({error:err.status?err.message:'Validation could not be saved. No changes were committed.'});});
-  return {router,store,tick,close(){if(timer)clearInterval(timer);store.close();},gateForDesign(id){
+  return {router,store,tick,scaleUpInputs(){
+    tick();const s=store.read(),c=context(s);
+    requireThat(integrity(s),'Validation integrity failure.');
+    return c.packets.map(packet=>{const round=s.rounds.filter(r=>r.caseId===packet.id).at(-1);
+      return {packet,gate:gate(s,packet),snapshotHash:round?.snapshotHash||null,snapshot:round?.snapshot||null,
+        findings:s.decisions.filter(d=>d.roundId===round?.id&&['approved','rejected','corrections'].includes(d.result)).map(d=>({result:d.result,checks:d.checks,snapshotHash:d.snapshotHash}))};
+    });
+  },close(){if(timer)clearInterval(timer);store.close();},gateForDesign(id){
     refresh();const s=store.read(),c=context(s),linked=c.packets.filter(p=>p.pilotDesignId===id&&!p.synthetic);
     if(workerError||linked.length!==1)return {eligible:false,reasons:['A single linked, independently validated contract is required.']};
     return gate(s,linked[0]);

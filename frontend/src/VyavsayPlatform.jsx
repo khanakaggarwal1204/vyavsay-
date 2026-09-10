@@ -1,5 +1,6 @@
 import PaymentsWorkspace from "./PaymentsWorkspace.jsx";
 import ValidationWorkspace from "./ValidationWorkspace.jsx";
+import ScaleUpWorkspace from "./ScaleUpWorkspace.jsx";
 import React, { useState, useMemo, useEffect } from "react";
 import {
   LayoutDashboard, Target, Rocket, FileText, ClipboardCheck, FlaskConical,
@@ -867,7 +868,7 @@ export default function App() {
           {view === "contracts" && <Contracts onPayments={() => setView("payments")} />}
           {view === "payments" && <PaymentsWorkspace />}
           {view === "validation" && <ValidationWorkspace onPayments={() => setView("payments")} />}
-          {view === "scaleup" && <ValidationWorkspace gateOnly onPayments={() => setView("payments")} />}
+          {view === "scaleup" && <ScaleUpWorkspace onValidation={() => setView("validation")} />}
           {view === "templates" && <Templates />}
           {view === "admin" && <Admin />}
         </main>

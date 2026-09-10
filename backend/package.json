@@ -7,7 +7,7 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "import:dpiit": "node scripts/import-dpiit.js",
-    "test": "node --test test/payment-v2.test.js test/validation-v3.test.js"
+    "test": "node --test test/payment-v2.test.js test/validation-v3.test.js test/scaleup-v1.test.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

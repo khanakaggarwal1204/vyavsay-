@@ -456,8 +456,7 @@ router.post("/pilot-design/:id/advance", (req, res) => {
 
   const active = pd.phases.findIndex(p => p.status === 'Active');
   if (pd.phases[active + 1]?.key === 'live') {
-    const check = validationGate(pd.id);
-    if (!check.eligible) return res.status(409).json({error:'Independent validation required before live rollout.', validation:check});
+    return res.status(409).json({error:'Use the authorised Scale-Up workspace handover. Independent validation alone cannot activate live rollout.'});
   }
   const result = advancePhase(pd);
   if (result.error) return res.status(400).json({ error: result.error });
