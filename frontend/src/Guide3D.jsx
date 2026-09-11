@@ -34,5 +34,5 @@ export default function Guide3D({ state = "idle", fallback, zoom = 1.55 }) {
   }, []);
   useEffect(() => { if (cameraRef.current) { cameraRef.current.zoom = zoom; cameraRef.current.updateProjectionMatrix(); } }, [zoom]);
   useEffect(() => { stateRef.current = state; const requested = state === "listening" ? "waving" : state; const next = actions.current[requested] || actions.current.idle; if (!next || current.current === next) return; current.current?.fadeOut(0.25); next.reset().fadeIn(0.25).play(); current.current = next; }, [state]);
-  return <div ref={host} className={`guide-3d guide-state-${state} ${ready ? "is-ready" : ""} ${hasError ? "has-error" : ""}`} aria-label="Animated Vyavsay guide"><img className="guide-3d-fallback" src={fallback} onError={keepAvatarVisible} alt=""/><span className="guide-3d-loading">Loading guide...</span></div>;
+  return <div ref={host} className={`guide-3d guide-state-${state} ${ready ? "is-ready" : ""} ${hasError ? "has-error" : ""}`} aria-label="Animated Neerja guide"><img className="guide-3d-fallback" src={fallback} onError={keepAvatarVisible} alt=""/><span className="guide-3d-loading">Loading guide...</span></div>;
 }

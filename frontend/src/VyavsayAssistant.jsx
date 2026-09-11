@@ -53,7 +53,7 @@ function replyFor(message, view) {
   if (text.includes("startup") || text.includes("find"))
     return "Startup Discovery compares challenge sector and requirements with registered startup information. Shortlisting is a recommendation; eligibility and expert review remain separate controls.";
   if (text.includes("hello") || text.includes("hi"))
-    return "Hello. I am your Vyavsay guide. Ask me about a challenge, template, pilot, payment, security review, or scale-up decision.";
+    return "Hello. I am Neerja, your Vyavsay guide. Ask me about a challenge, template, pilot, payment, security review, or scale-up decision.";
   return `I can help with ${view === "templates" ? "the template libraries and review workflow" : "challenges, startups, pilots, payments, validation and scale-up"}. Try asking: “What should I do next?”`;
 }
 
@@ -233,7 +233,7 @@ export default function VyavsayAssistant({
                   <img src={avatarSrc} onError={keepAvatarVisible} alt="" />
                 </span>
                 <div>
-                  <strong>Vyavsay Guide</strong>
+                    <strong>Neerja</strong>
                   <small>
                     {mode === "walkthrough"
                       ? "Explore the procurement lifecycle"
@@ -272,7 +272,7 @@ export default function VyavsayAssistant({
               <>
                 <div className="assistant-messages">
                   <div className="assistant-welcome">
-                    <strong>Namaste, I’m your Vyavsay guide.</strong>
+                      <strong>Namaste, I’m Neerja, your Vyavsay guide.</strong>
                     <p>
                       Ask me anything about challenges, templates, pilots,
                       payments or approvals.
@@ -325,7 +325,7 @@ export default function VyavsayAssistant({
                   className="assistant-composer"
                 >
                   <input
-                    aria-label="Ask Vyavsay Guide"
+                    aria-label="Ask Neerja"
                     placeholder="Ask your guide…"
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
@@ -353,7 +353,7 @@ export default function VyavsayAssistant({
                   <span>
                     <Bot size={13} /> Grounded assistant
                   </span>
-                  <span className="assistant-voice-label">Natural female voice</span>
+                  <span className="assistant-voice-label">Neerja voice</span>
                   <button
                     onClick={() => {
                       setMuted((value) => !value);
@@ -382,8 +382,8 @@ export default function VyavsayAssistant({
       <button
         className={`assistant-launcher ${open ? "is-open" : ""}`}
         onClick={() => setOpen((value) => !value)}
-        aria-label={open ? "Close Vyavsay Guide" : "Open Vyavsay Guide"}
-        title="Ask Vyavsay Guide"
+        aria-label={open ? "Close Neerja" : "Open Neerja"}
+        title="Ask Neerja"
       >
         <span className="assistant-avatar">
           <img src={avatarSrc} onError={keepAvatarVisible} alt="" />
