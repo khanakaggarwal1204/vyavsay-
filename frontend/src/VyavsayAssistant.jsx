@@ -69,64 +69,55 @@ export default function VyavsayAssistant({
     [speaking, setSpeaking] = useState(false),
     [input, setInput] = useState(""),
     [messages, setMessages] = useState([]),
-    [zoom, setZoom] = useState(1),
+    [zoom, setZoom] = useState(1.55),
     [sessionId, setSessionId] = useState(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(null),
-    [mode, setMode] = useState("ask"),
-    [voices, setVoices] = useState([]),
-    [voiceName, setVoiceName] = useState("");
-  const voiceOptions = voices.filter(
-    (v) =>
-      /en-IN|en-GB|en-US/i.test(v.lang) &&
-      !/male|compact|whisper/i.test(v.name),
-  );
+    [mode, setMode] = useState("ask");
   const avatarState = listening ? "listening" : speaking ? "talking" : "idle";
-  const recognition = useRef(null),
-    endRef = useRef(null);
+  const recognition = useRef(null), endRef = useRef(null), audio = useRef(null), audioUrl = useRef(null);
   const chips = useMemo(() => suggestions[view] || suggestions.default, [view]);
-  const say = (text) => {
-    if (muted || !window.speechSynthesis) return;
-    let spoken = false;
+  const stopVoice = () => {
+    audio.current?.pause();
+    audio.current = null;
+    if (audioUrl.current) URL.revokeObjectURL(audioUrl.current);
+    audioUrl.current = null;
+    window.speechSynthesis?.cancel();
+    setSpeaking(false);
+  };
+  const browserSpeech = (text) => {
+    if (!window.speechSynthesis) return;
     const speakNow = () => {
-      if (spoken) return;
-      spoken = true;
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      const available = window.speechSynthesis
-        .getVoices()
-        .filter(
-          (v) =>
-            /en-IN|en-GB|en-US/i.test(v.lang) &&
-            !/male|compact|whisper/i.test(v.name),
-        );
-      const voice =
-        available.find((v) => v.name === voiceName) ||
-        available.find((v) =>
-          /female|samantha|ava|allison|karen|victoria|zira|veena|raveena|siri/i.test(
-            v.name,
-          ),
-        ) ||
-        available.find((v) => /premium|enhanced|natural/i.test(v.name));
-      if (voice) {
-        utterance.voice = voice;
-        setVoiceName(voice.name);
-      }
+      const voices = window.speechSynthesis.getVoices();
+      const voice = voices.find((item) => /sandy/i.test(item.name)) || voices.find((item) => /samantha/i.test(item.name)) || voices.find((item) => /ava|allison|karen|victoria|zira|veena|raveena/i.test(item.name));
+      const utterance = new SpeechSynthesisUtterance(text.replace(/\bVyav(?:a)?say\b/gi, "vyuh-vuh-saay"));
+      if (voice) utterance.voice = voice;
       utterance.lang = voice?.lang || "en-IN";
-      utterance.rate = 0.91;
-      utterance.pitch = 1.12;
-      utterance.volume = 0.96;
+      utterance.rate = 0.94;
+      utterance.pitch = 1.04;
       utterance.onstart = () => setSpeaking(true);
       utterance.onend = () => setSpeaking(false);
       utterance.onerror = () => setSpeaking(false);
       window.speechSynthesis.speak(utterance);
     };
     if (window.speechSynthesis.getVoices().length) speakNow();
-    else {
-      window.speechSynthesis.addEventListener("voiceschanged", speakNow, {
-        once: true,
-      });
-      setTimeout(speakNow, 700);
+    else window.speechSynthesis.addEventListener("voiceschanged", speakNow, { once: true });
+  };
+  const say = async (text) => {
+    if (muted) return;
+    stopVoice();
+    try {
+      const response = await fetch("/api/assistant/speech", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+      if (!response.ok) throw new Error("Natural voice unavailable");
+      audioUrl.current = URL.createObjectURL(await response.blob());
+      const player = new Audio(audioUrl.current);
+      audio.current = player;
+      player.onplay = () => setSpeaking(true);
+      player.onended = stopVoice;
+      player.onerror = () => { stopVoice(); browserSpeech(text); };
+      await player.play();
+    } catch {
+      browserSpeech(text);
     }
   };
   const send = async (value = input) => {
@@ -180,33 +171,7 @@ export default function VyavsayAssistant({
     recognition.current = next;
     next.start();
   };
-  useEffect(() => {
-    const loadVoices = () => {
-      const loaded = window.speechSynthesis?.getVoices() || [];
-      setVoices(loaded);
-      if (!voiceName)
-        setVoiceName(
-          loaded
-            .filter(
-              (v) =>
-                /en-IN|en-GB|en-US/i.test(v.lang) &&
-                !/male|compact|whisper/i.test(v.name),
-            )
-            .find((v) =>
-              /female|samantha|ava|allison|karen|victoria|zira|veena|raveena|siri/i.test(
-                v.name,
-              ),
-            )?.name || "",
-        );
-    };
-    loadVoices();
-    window.speechSynthesis?.addEventListener("voiceschanged", loadVoices);
-    return () => {
-      window.speechSynthesis?.removeEventListener("voiceschanged", loadVoices);
-      window.speechSynthesis?.cancel();
-      recognition.current?.stop();
-    };
-  }, [voiceName]);
+  useEffect(() => () => { stopVoice(); recognition.current?.stop(); }, []);
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, open]);
@@ -236,12 +201,9 @@ export default function VyavsayAssistant({
               />
             ) : (
               <>
-                <div
-                  className={`assistant-character avatar-${avatarState}`}
-                  style={{ transform: `scale(${zoom})` }}
-                >
+                <div className={`assistant-character avatar-${avatarState}`}>
                   <div className="assistant-halo" />
-              <Guide3D state={avatarState} fallback={avatarSrc} />
+                  <Guide3D state={avatarState} fallback={avatarSrc} zoom={zoom} />
                 </div>
                 <div className="assistant-scene-bottom">
                   <span>
@@ -255,21 +217,23 @@ export default function VyavsayAssistant({
                     <button
                       title="Zoom out"
                       aria-label="Zoom out"
-                      onClick={() => setZoom((v) => Math.max(0.86, v - 0.08))}
+                      disabled={zoom <= 0.9}
+                      onClick={() => setZoom((v) => Math.max(0.9, Number((v - 0.2).toFixed(2))))}
                     >
                       <Minus size={14} />
                     </button>
                     <button
                       title="Zoom in"
                       aria-label="Zoom in"
-                      onClick={() => setZoom((v) => Math.min(1.18, v + 0.08))}
+                      disabled={zoom >= 2.35}
+                      onClick={() => setZoom((v) => Math.min(2.35, Number((v + 0.2).toFixed(2))))}
                     >
                       <Plus size={14} />
                     </button>
                     <button
                       title="Focus guide"
                       aria-label="Focus guide"
-                      onClick={() => setZoom(1)}
+                      onClick={() => setZoom(1.55)}
                     >
                       <Camera size={14} />
                     </button>
@@ -405,26 +369,11 @@ export default function VyavsayAssistant({
                   <span>
                     <Bot size={13} /> Grounded assistant
                   </span>
-                  <select
-                    aria-label="Guide female voice"
-                    value={voiceName}
-                    onChange={(event) => setVoiceName(event.target.value)}
-                  >
-                    {voiceOptions.length ? (
-                      voiceOptions.map((voice) => (
-                        <option key={voice.name} value={voice.name}>
-                          {voice.name}
-                        </option>
-                      ))
-                    ) : (
-                      <option value="">Browser female voice unavailable</option>
-                    )}
-                  </select>
+                  <span className="assistant-voice-label">Natural female voice</span>
                   <button
                     onClick={() => {
                       setMuted((value) => !value);
-                      window.speechSynthesis?.cancel();
-                      setSpeaking(false);
+                      stopVoice();
                     }}
                     title={muted ? "Turn voice on" : "Mute voice"}
                     aria-label={muted ? "Turn voice on" : "Mute voice"}

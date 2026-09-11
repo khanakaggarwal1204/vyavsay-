@@ -8,14 +8,14 @@ import { keepAvatarVisible } from "./guideAsset.js";
 
 const clips = { idle: "/avatars/idle.fbx", talking: "/avatars/Talking.fbx", walking: "/avatars/walking.fbx", waving: "/avatars/Waving.fbx" };
 
-export default function Guide3D({ state = "idle", fallback }) {
-  const host = useRef(null), actions = useRef({}), current = useRef(null), stateRef = useRef(state);
+export default function Guide3D({ state = "idle", fallback, zoom = 1.55 }) {
+  const host = useRef(null), actions = useRef({}), current = useRef(null), stateRef = useRef(state), cameraRef = useRef(null);
   const [ready, setReady] = useState(false), [hasError, setHasError] = useState(false);
   useEffect(() => {
     const element = host.current;
     if (!element) return undefined;
     const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100), renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    camera.position.set(0, 1.15, 4.2); camera.lookAt(0, 1.05, 0); renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); renderer.outputColorSpace = THREE.SRGBColorSpace; element.appendChild(renderer.domElement);
+    cameraRef.current = camera; camera.zoom = zoom; camera.position.set(0, 1.15, 4.2); camera.lookAt(0, 1.05, 0); camera.updateProjectionMatrix(); renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); renderer.outputColorSpace = THREE.SRGBColorSpace; element.appendChild(renderer.domElement);
     scene.add(new THREE.HemisphereLight(0xf4ffff, 0x315f66, 2.2)); const key = new THREE.DirectionalLight(0xffffff, 2.4); key.position.set(2, 4, 3); scene.add(key);
     const floor = new THREE.Mesh(new THREE.CircleGeometry(1.15, 48), new THREE.MeshBasicMaterial({ color: 0x8bbdb7, transparent: true, opacity: 0.32 })); floor.rotation.x = -Math.PI / 2; floor.position.y = 0.02; scene.add(floor);
     let mixer, disposed = false, welcomeTimer; const gltfLoader = new GLTFLoader(), fbxLoader = new FBXLoader(); const loadFbx = (url) => new Promise((resolve, reject) => fbxLoader.load(url, resolve, undefined, reject));
@@ -29,9 +29,10 @@ export default function Guide3D({ state = "idle", fallback }) {
     }).catch(() => { if (!disposed) { window.clearTimeout(failSafe); setHasError(true); } });
     const resize = () => { const width = element.clientWidth || 320, height = element.clientHeight || 480; camera.aspect = width / height; camera.updateProjectionMatrix(); renderer.setSize(width, height, false); }; resize(); const observer = new ResizeObserver(resize); observer.observe(element); const clock = new THREE.Clock();
     const loop = () => { if (disposed) return; requestAnimationFrame(loop); mixer?.update(clock.getDelta()); renderer.render(scene, camera); }; loop();
-    return () => { disposed = true; window.clearTimeout(failSafe); window.clearTimeout(welcomeTimer); observer.disconnect(); renderer.dispose(); renderer.domElement.remove(); scene.traverse((object) => { object.geometry?.dispose?.(); if (object.material) (Array.isArray(object.material) ? object.material : [object.material]).forEach((material) => material.dispose?.()); }); };
+    return () => { disposed = true; cameraRef.current = null; window.clearTimeout(failSafe); window.clearTimeout(welcomeTimer); observer.disconnect(); renderer.dispose(); renderer.domElement.remove(); scene.traverse((object) => { object.geometry?.dispose?.(); if (object.material) (Array.isArray(object.material) ? object.material : [object.material]).forEach((material) => material.dispose?.()); }); };
     function play(name) { const next = actions.current[name] || actions.current.idle; if (!next || current.current === next) return; current.current?.fadeOut(0.25); next.reset().fadeIn(0.25).play(); current.current = next; }
   }, []);
+  useEffect(() => { if (cameraRef.current) { cameraRef.current.zoom = zoom; cameraRef.current.updateProjectionMatrix(); } }, [zoom]);
   useEffect(() => { stateRef.current = state; const requested = state === "listening" ? "waving" : state; const next = actions.current[requested] || actions.current.idle; if (!next || current.current === next) return; current.current?.fadeOut(0.25); next.reset().fadeIn(0.25).play(); current.current = next; }, [state]);
   return <div ref={host} className={`guide-3d guide-state-${state} ${ready ? "is-ready" : ""} ${hasError ? "has-error" : ""}`} aria-label="Animated Vyavsay guide"><img className="guide-3d-fallback" src={fallback} onError={keepAvatarVisible} alt=""/><span className="guide-3d-loading">Loading guide...</span></div>;
 }
