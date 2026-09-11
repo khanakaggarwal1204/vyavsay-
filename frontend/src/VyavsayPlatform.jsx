@@ -207,14 +207,22 @@ function Stepper({ current, stages = LIFECYCLE }) {
 /* ---------------------------------------------------------------------- */
 /*  PRIMITIVES                                                             */
 /* ---------------------------------------------------------------------- */
-function Card({ children, style, className = "", noPad }) {
+function Card({ children, style, className = "", noPad, onClick }) {
+  const [hover, setHover] = useState(false);
   return (
     <div
       className={className}
+      onClick={onClick}
+      onMouseEnter={onClick ? () => setHover(true) : undefined}
+      onMouseLeave={onClick ? () => setHover(false) : undefined}
       style={{
         background: C.surface, border: `1px solid ${C.line}`, borderRadius: 6,
-        boxShadow: "0 10px 28px rgba(6,48,92,0.055)",
-        padding: noPad ? 0 : 18, ...style,
+        boxShadow: hover ? "0 14px 34px rgba(6,48,92,0.12)" : "0 10px 28px rgba(6,48,92,0.055)",
+        padding: noPad ? 0 : 18,
+        cursor: onClick ? "pointer" : undefined,
+        transform: hover ? "translateY(-2px)" : "translateY(0)",
+        transition: "box-shadow .15s, transform .15s",
+        ...style,
       }}
     >
       {children}
@@ -1861,36 +1869,263 @@ function CreateChallenge({ onDone }) {
 /* ---------------------------------------------------------------------- */
 function Marketplace() {
   const [q, setQ] = useState("");
-  const filtered = STARTUPS.filter((s) => s.name.toLowerCase().includes(q.toLowerCase()));
+  const [selected, setSelected] = useState(null);
+  const [shortlisted, setShortlisted] = useState({});
+  const [inviteState, setInviteState] = useState({});
+  const [showFilters, setShowFilters] = useState(false);
+  const [activeTags, setActiveTags] = useState([]);
+
+  const allTags = Array.from(new Set(STARTUPS.flatMap((s) => s.tags)));
+
+  const filtered = STARTUPS.filter(
+    (s) =>
+      s.name.toLowerCase().includes(q.toLowerCase()) &&
+      (activeTags.length === 0 || activeTags.some((t) => s.tags.includes(t)))
+  );
+
+  function toggleShortlist(name, e) {
+    if (e) e.stopPropagation();
+    setShortlisted((cur) => ({ ...cur, [name]: !cur[name] }));
+  }
+
+  function sendInvite(name, e) {
+    if (e) e.stopPropagation();
+    if (inviteState[name] === "sending" || inviteState[name] === "sent") return;
+    setInviteState((cur) => ({ ...cur, [name]: "sending" }));
+    setTimeout(() => {
+      setInviteState((cur) => ({ ...cur, [name]: "sent" }));
+    }, 900);
+  }
+
+  function toggleTag(tag) {
+    setActiveTags((cur) => (cur.includes(tag) ? cur.filter((t) => t !== tag) : [...cur, tag]));
+  }
+
   return (
     <div>
-      <SectionTitle eyebrow="DISCOVER" title="Startup Marketplace" right={<Btn variant="secondary" icon={Filter} small>Domain · TRL · Budget · Recognition</Btn>} />
+      <SectionTitle
+        eyebrow="DISCOVER"
+        title="Startup Marketplace"
+        right={
+          <div style={{ position: "relative" }}>
+            <Btn variant="secondary" icon={Filter} small onClick={() => setShowFilters((v) => !v)}>
+              Domain · TRL · Budget · Recognition
+            </Btn>
+            {showFilters && (
+              <div
+                style={{
+                  position: "absolute", right: 0, top: 38, background: "#fff",
+                  border: `1px solid ${C.line}`, borderRadius: 5, padding: 12, width: 270,
+                  boxShadow: "0 6px 18px rgba(20,33,61,0.1)", zIndex: 20,
+                }}
+              >
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: C.inkSoft, marginBottom: 8 }}>FILTER BY DOMAIN</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {allTags.map((tag) => (
+                    <button
+                      key={tag}
+                      onClick={() => toggleTag(tag)}
+                      style={{
+                        fontSize: 11.5, padding: "4px 9px", borderRadius: 20, cursor: "pointer",
+                        border: `1px solid ${activeTags.includes(tag) ? C.blue : C.lineStrong}`,
+                        background: activeTags.includes(tag) ? C.blueSoft : "#fff",
+                        color: activeTags.includes(tag) ? C.blue : C.inkSoft, fontWeight: 600,
+                      }}
+                    >
+                      {tag}
+                    </button>
+                  ))}
+                </div>
+                {activeTags.length > 0 && (
+                  <button
+                    onClick={() => setActiveTags([])}
+                    style={{ marginTop: 10, fontSize: 11.5, color: C.inkSoft, background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }}
+                  >
+                    Clear filters
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        }
+      />
       <input style={{ ...inputStyle, marginBottom: 18, maxWidth: 380 }} placeholder="Search startups…" value={q} onChange={(e) => setQ(e.target.value)} />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 14 }}>
-        {filtered.map((s) => (
-          <Card key={s.name} style={{ transition: "box-shadow .15s" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-              <div style={{ width: 38, height: 38, borderRadius: 6, background: C.navySoft, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <Rocket size={17} color={C.ink} />
+        {filtered.map((s) => {
+          const isShortlisted = !!shortlisted[s.name];
+          const invite = inviteState[s.name];
+          return (
+            <Card key={s.name} onClick={() => setSelected(s)}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div style={{ width: 38, height: 38, borderRadius: 6, background: C.navySoft, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <Rocket size={17} color={C.ink} />
+                </div>
+                <StatusChip label={s.badge === "Verified" ? "Scaled / Closed" : s.badge === "Eligible" ? "Startup Shortlisted" : "Under Review"} small />
               </div>
-              <StatusChip label={s.badge === "Verified" ? "Scaled / Closed" : s.badge === "Eligible" ? "Startup Shortlisted" : "Under Review"} small />
-            </div>
-            <div style={{ fontWeight: 700, fontSize: 15, marginTop: 10 }}>{s.name}</div>
-            <div style={{ fontSize: 12, color: C.inkSoft, marginBottom: 8 }}>{s.sector}</div>
-            <div style={{ display: "flex", gap: 12, fontSize: 11.5, color: C.inkSoft, marginBottom: 10 }}>
-              <span>{s.trl}</span><span>·</span><span>{s.pilots} past pilots</span><span>·</span>
-              <span style={{ display: "flex", alignItems: "center", gap: 3 }}><Star size={11} color={C.brass} fill={C.brass} /> {s.rating}</span>
-            </div>
-            <div style={{ fontSize: 11.5, color: C.inkSoft, display: "flex", alignItems: "center", gap: 4, marginBottom: 12 }}>
-              <MapPin size={12} /> {s.loc} · {s.recog}
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <Btn small variant="secondary" style={{ flex: 1, justifyContent: "center" }}>Shortlist</Btn>
-              <Btn small style={{ flex: 1, justifyContent: "center" }}>Invite to apply</Btn>
-            </div>
-          </Card>
-        ))}
+              <div style={{ fontWeight: 700, fontSize: 15, marginTop: 10 }}>{s.name}</div>
+              <div style={{ fontSize: 12, color: C.inkSoft, marginBottom: 8 }}>{s.sector}</div>
+              <div style={{ display: "flex", gap: 12, fontSize: 11.5, color: C.inkSoft, marginBottom: 10 }}>
+                <span>{s.trl}</span><span>·</span><span>{s.pilots} past pilots</span><span>·</span>
+                <span style={{ display: "flex", alignItems: "center", gap: 3 }}><Star size={11} color={C.brass} fill={C.brass} /> {s.rating}</span>
+              </div>
+              <div style={{ fontSize: 11.5, color: C.inkSoft, display: "flex", alignItems: "center", gap: 4, marginBottom: 12 }}>
+                <MapPin size={12} /> {s.loc} · {s.recog}
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <Btn
+                  small
+                  variant={isShortlisted ? "primary" : "secondary"}
+                  icon={isShortlisted ? CheckCircle2 : undefined}
+                  style={{ flex: 1, justifyContent: "center" }}
+                  onClick={(e) => toggleShortlist(s.name, e)}
+                >
+                  {isShortlisted ? "Shortlisted" : "Shortlist"}
+                </Btn>
+                <Btn
+                  small
+                  variant={invite === "sent" ? "secondary" : "primary"}
+                  disabled={invite === "sending" || invite === "sent"}
+                  style={{ flex: 1, justifyContent: "center" }}
+                  onClick={(e) => sendInvite(s.name, e)}
+                >
+                  {invite === "sending" ? "Sending…" : invite === "sent" ? "Invited ✓" : "Invite to apply"}
+                </Btn>
+              </div>
+            </Card>
+          );
+        })}
       </div>
+
+      {filtered.length === 0 && (
+        <div style={{ textAlign: "center", color: C.inkSoft, fontSize: 13, padding: "40px 0" }}>
+          No startups match "{q}"{activeTags.length ? ` in ${activeTags.join(", ")}` : ""}.
+        </div>
+      )}
+
+      {selected && (
+        <StartupDetailModal
+          startup={selected}
+          onClose={() => setSelected(null)}
+          shortlisted={!!shortlisted[selected.name]}
+          onToggleShortlist={() => toggleShortlist(selected.name)}
+          inviteStatus={inviteState[selected.name]}
+          onInvite={() => sendInvite(selected.name)}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------- */
+/*  STARTUP DETAIL MODAL — opened by clicking a card in the Marketplace    */
+/* ---------------------------------------------------------------------- */
+function StartupDetailModal({ startup: s, onClose, shortlisted, onToggleShortlist, inviteStatus, onInvite }) {
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, background: "rgba(6,48,92,0.45)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        zIndex: 50, padding: 20,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#fff", borderRadius: 8, width: "100%", maxWidth: 520,
+          maxHeight: "88vh", overflowY: "auto", boxShadow: "0 24px 60px rgba(6,48,92,0.25)",
+        }}
+      >
+        <div style={{ padding: "18px 22px", borderBottom: `1px solid ${C.line}`, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <div style={{ width: 44, height: 44, borderRadius: 8, background: C.navySoft, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <Rocket size={20} color={C.ink} />
+            </div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 17 }}>{s.name}</div>
+              <div style={{ fontSize: 12.5, color: C.inkSoft }}>{s.sector}</div>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            style={{ background: "none", border: "none", cursor: "pointer", color: C.inkSoft, padding: 4 }}
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        <div style={{ padding: "18px 22px" }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+            <StatusChip label={s.badge === "Verified" ? "Scaled / Closed" : s.badge === "Eligible" ? "Startup Shortlisted" : "Under Review"} small />
+            {s.dpiit && <StatusChip label="Startup Shortlisted" small />}
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 18 }}>
+            <DetailStat icon={Gauge} label="TRL" value={s.trl} />
+            <DetailStat icon={Building2} label="Past govt. pilots" value={s.pilots} />
+            <DetailStat icon={Star} label="Rating" value={s.rating} />
+            <DetailStat icon={Layers} label="Years active" value={`${s.yearsActive} yrs`} />
+          </div>
+
+          <div style={{ fontSize: 11.5, fontWeight: 700, color: C.inkSoft, marginBottom: 6 }}>LOCATION & RECOGNITION</div>
+          <div style={{ fontSize: 13, color: C.ink, display: "flex", alignItems: "center", gap: 6, marginBottom: 16 }}>
+            <MapPin size={14} color={C.inkSoft} /> {s.loc} · {s.recog}
+          </div>
+
+          <div style={{ fontSize: 11.5, fontWeight: 700, color: C.inkSoft, marginBottom: 6 }}>SECTOR TAGS</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
+            {s.tags.map((tag) => (
+              <span key={tag} style={{ fontSize: 11.5, padding: "3px 9px", borderRadius: 20, background: C.navySoft, color: C.ink, fontWeight: 600 }}>
+                {tag}
+              </span>
+            ))}
+          </div>
+
+          {s.certifications.length > 0 && (
+            <>
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: C.inkSoft, marginBottom: 6 }}>CERTIFICATIONS</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 6 }}>
+                {s.certifications.map((cert) => (
+                  <div key={cert} style={{ fontSize: 12.5, color: C.ink, display: "flex", alignItems: "center", gap: 6 }}>
+                    <ShieldCheck size={13} color={C.teal} /> {cert}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        <div style={{ padding: "14px 22px", borderTop: `1px solid ${C.line}`, display: "flex", gap: 10 }}>
+          <Btn
+            variant={shortlisted ? "primary" : "secondary"}
+            icon={shortlisted ? CheckCircle2 : undefined}
+            style={{ flex: 1, justifyContent: "center" }}
+            onClick={onToggleShortlist}
+          >
+            {shortlisted ? "Shortlisted" : "Shortlist"}
+          </Btn>
+          <Btn
+            variant={inviteStatus === "sent" ? "secondary" : "primary"}
+            disabled={inviteStatus === "sending" || inviteStatus === "sent"}
+            style={{ flex: 1, justifyContent: "center" }}
+            onClick={onInvite}
+          >
+            {inviteStatus === "sending" ? "Sending…" : inviteStatus === "sent" ? "Invited ✓" : "Invite to apply"}
+          </Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DetailStat({ icon: Icon, label, value }) {
+  return (
+    <div style={{ background: C.paper, border: `1px solid ${C.line}`, borderRadius: 6, padding: "10px 12px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: C.inkSoft, marginBottom: 4 }}>
+        <Icon size={12} /> {label}
+      </div>
+      <div style={{ fontWeight: 700, fontSize: 14.5, color: C.ink }}>{value}</div>
     </div>
   );
 }
