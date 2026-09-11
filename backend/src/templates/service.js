@@ -238,9 +238,9 @@ export function createTemplateService({
     if (origin) {
       try {
         const url = new URL(origin);
-        const allowed = demo
-          ? ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
-          : url.host === req.get("host");
+        const allowed =
+          url.host === req.get("host") ||
+          (demo && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname));
         if (!allowed)
           return res
             .status(403)
