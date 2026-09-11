@@ -152,6 +152,24 @@ export function speechText(text, browser = false) {
   return clean(text, "", MAX_SPEECH).replace(/\bVyav(?:a)?say\b/gi, pronunciation);
 }
 
+export function pcmToWav(pcm, sampleRate = 24000) {
+  const header = Buffer.alloc(44);
+  header.write("RIFF", 0);
+  header.writeUInt32LE(36 + pcm.length, 4);
+  header.write("WAVE", 8);
+  header.write("fmt ", 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(1, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(sampleRate * 2, 28);
+  header.writeUInt16LE(2, 32);
+  header.writeUInt16LE(16, 34);
+  header.write("data", 36);
+  header.writeUInt32LE(pcm.length, 40);
+  return Buffer.concat([header, pcm]);
+}
+
 export function createAssistantService() {
   const router = Router();
   router.post("/query", async (req, res, next) => {
@@ -189,12 +207,24 @@ export function createAssistantService() {
   router.post("/speech", async (req, res) => {
     const text = speechText(req.body?.text);
     if (!text) return res.status(422).json({ error: "text is required" });
-    if (!process.env.ELEVENLABS_API_KEY || !process.env.ELEVENLABS_VOICE_ID) return res.status(503).json({ error: "Natural voice is not configured" });
+    if (!process.env.GEMINI_API_KEY) return res.status(503).json({ error: "Natural voice is not configured" });
     try {
-      const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(process.env.ELEVENLABS_VOICE_ID)}?output_format=mp3_44100_128`, { method: "POST", signal: AbortSignal.timeout(20000), headers: { "xi-api-key": process.env.ELEVENLABS_API_KEY, "Content-Type": "application/json", Accept: "audio/mpeg" }, body: JSON.stringify({ text, model_id: process.env.ELEVENLABS_MODEL || "eleven_multilingual_v2", voice_settings: { stability: 0.48, similarity_boost: 0.78, style: 0.22, use_speaker_boost: true } }) });
-      if (!response.ok) throw new Error(`ElevenLabs returned ${response.status}`);
-      res.set({ "Content-Type": "audio/mpeg", "Cache-Control": "no-store" });
-      res.send(Buffer.from(await response.arrayBuffer()));
+      const model = process.env.GEMINI_TTS_MODEL || "gemini-2.5-flash-preview-tts";
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+        method: "POST",
+        signal: AbortSignal.timeout(25000),
+        headers: { "x-goog-api-key": process.env.GEMINI_API_KEY, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: `Speak in a warm, natural, professional Indian female voice with relaxed pacing. Read only this response: ${text}` }] }],
+          generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: process.env.GEMINI_TTS_VOICE || "Kore" } } } },
+        }),
+      });
+      if (!response.ok) throw new Error(`Gemini TTS returned ${response.status}`);
+      const data = await response.json();
+      const encoded = data.candidates?.[0]?.content?.parts?.find((part) => part.inlineData?.data)?.inlineData?.data;
+      if (!encoded) throw new Error("Gemini TTS returned no audio");
+      res.set({ "Content-Type": "audio/wav", "Cache-Control": "no-store" });
+      res.send(pcmToWav(Buffer.from(encoded, "base64")));
     } catch (error) {
       console.warn(`Natural voice failed: ${error.message}`);
       res.status(502).json({ error: "Natural voice is temporarily unavailable" });

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { fallbackAnswer, speechText } from "../src/assistant.js";
+import { fallbackAnswer, pcmToWav, speechText } from "../src/assistant.js";
 
 test("fallback library answers core platform questions", () => {
   const questions = [
@@ -31,4 +31,12 @@ test("fallback library answers core platform questions", () => {
 test("speech output uses the Hindi pronunciation spelling", () => {
   assert.equal(speechText("Welcome to Vyavsay"), "Welcome to व्यवसाय");
   assert.equal(speechText("Welcome to Vyavsay", true), "Welcome to vyuh-vuh-saay");
+});
+
+test("Gemini PCM audio is wrapped as a browser-playable WAV", () => {
+  const wav = pcmToWav(Buffer.from([0, 0, 1, 0]));
+  assert.equal(wav.subarray(0, 4).toString(), "RIFF");
+  assert.equal(wav.subarray(8, 12).toString(), "WAVE");
+  assert.equal(wav.readUInt32LE(24), 24000);
+  assert.equal(wav.readUInt32LE(40), 4);
 });
