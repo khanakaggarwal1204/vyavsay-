@@ -2,3 +2,4 @@ node_modules/
 .DS_Store
 dist/
 backend/src/data/*.sqlite*
+backend/src/data/store.json
