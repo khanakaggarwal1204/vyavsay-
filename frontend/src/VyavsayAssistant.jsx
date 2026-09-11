@@ -82,31 +82,7 @@ export default function VyavsayAssistant({
     audio.current = null;
     if (audioUrl.current) URL.revokeObjectURL(audioUrl.current);
     audioUrl.current = null;
-    window.speechSynthesis?.cancel();
     setSpeaking(false);
-  };
-  const browserSpeech = (text) => {
-    if (!window.speechSynthesis) return;
-    const speakNow = () => {
-      const voices = window.speechSynthesis.getVoices();
-      const voice = voices.find((item) => /sandy/i.test(item.name)) || voices.find((item) => /samantha/i.test(item.name)) || voices.find((item) => /ava|allison|karen|victoria|zira|veena|raveena/i.test(item.name));
-      if (!voice) {
-        setSpeaking(false);
-        setError("Natural female voice is temporarily unavailable.");
-        return;
-      }
-      const utterance = new SpeechSynthesisUtterance(text.replace(/\bVyav(?:a)?say\b/gi, "vyuh-vuh-saay"));
-      utterance.voice = voice;
-      utterance.lang = voice.lang || "en-IN";
-      utterance.rate = 0.92;
-      utterance.pitch = 1.02;
-      utterance.onstart = () => setSpeaking(true);
-      utterance.onend = () => setSpeaking(false);
-      utterance.onerror = () => setSpeaking(false);
-      window.speechSynthesis.speak(utterance);
-    };
-    if (window.speechSynthesis.getVoices().length) speakNow();
-    else window.speechSynthesis.addEventListener("voiceschanged", speakNow, { once: true });
   };
   const say = async (text) => {
     if (muted) return;
@@ -119,10 +95,13 @@ export default function VyavsayAssistant({
       audio.current = player;
       player.onplay = () => setSpeaking(true);
       player.onended = stopVoice;
-      player.onerror = () => { stopVoice(); browserSpeech(text); };
+      player.onerror = () => {
+        stopVoice();
+        setError("The guide voice is temporarily unavailable. Please try again.");
+      };
       await player.play();
     } catch {
-      browserSpeech(text);
+      setError("The guide voice is temporarily unavailable. Please try again.");
     }
   };
   const send = async (value = input) => {

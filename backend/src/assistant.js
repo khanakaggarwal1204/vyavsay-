@@ -5,6 +5,7 @@ import { runEligibilityCheck } from "./eligibility.js";
 
 const MAX_MESSAGE = 800;
 const MAX_SPEECH = 2000;
+const speechCache = new Map();
 const roles = new Set(["Government Official", "Startup", "Evaluator", "Validator", "Admin"]);
 
 function clean(value, fallback = "", limit = MAX_MESSAGE) {
@@ -211,23 +212,31 @@ export function createAssistantService() {
     const text = speechText(req.body?.text);
     if (!text) return res.status(422).json({ error: "text is required" });
     if (!process.env.GEMINI_API_KEY) return res.status(503).json({ error: "Natural voice is not configured" });
+    const cached = speechCache.get(text);
+    if (cached) {
+      res.set({ "Content-Type": "audio/wav", "Cache-Control": "private, max-age=3600" });
+      return res.send(cached);
+    }
     try {
       const model = process.env.GEMINI_TTS_MODEL || "gemini-2.5-flash-preview-tts";
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
         method: "POST",
-        signal: AbortSignal.timeout(25000),
+        signal: AbortSignal.timeout(60000),
         headers: { "x-goog-api-key": process.env.GEMINI_API_KEY, "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts: [{ text: `You are Aanya, a friendly young Indian woman guiding one person through the Vyavsay platform. Speak conversationally with gentle warmth, natural varied intonation, and short pauses at punctuation. Use a calm medium-slow pace. Do not sound like an announcer, presentation narrator, IVR, or robot. Read only the response below and do not add or remove words.\n\n${text}` }] }],
-          generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: process.env.GEMINI_TTS_VOICE || "Aoede" } } } },
+          generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } } } },
         }),
       });
       if (!response.ok) throw new Error(`Gemini TTS returned ${response.status}`);
       const data = await response.json();
       const encoded = data.candidates?.[0]?.content?.parts?.find((part) => part.inlineData?.data)?.inlineData?.data;
       if (!encoded) throw new Error("Gemini TTS returned no audio");
-      res.set({ "Content-Type": "audio/wav", "Cache-Control": "no-store" });
-      res.send(pcmToWav(Buffer.from(encoded, "base64")));
+      const audio = pcmToWav(Buffer.from(encoded, "base64"));
+      speechCache.set(text, audio);
+      if (speechCache.size > 50) speechCache.delete(speechCache.keys().next().value);
+      res.set({ "Content-Type": "audio/wav", "Cache-Control": "private, max-age=3600" });
+      res.send(audio);
     } catch (error) {
       console.warn(`Natural voice failed: ${error.message}`);
       res.status(502).json({ error: "Natural voice is temporarily unavailable" });
