@@ -1,10 +1,13 @@
 import express from 'express';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import apiRouter, { setPaymentProjection, setValidationGate, setTemplateGate } from './src/routes.js';
 import { readDB, writeDB } from './src/db.js';
 import { createPaymentService } from './src/payment/service.js';
 import { createValidationService } from './src/validation/service.js';
 import { createScaleUpService } from './src/scaleup/service.js';
 import { createTemplateService } from './src/templates/service.js';
+import { createAssistantService } from './src/assistant.js';
 const app=express();
 const templates=createTemplateService({readSource:readDB,writeSource:writeDB});
 setTemplateGate(templates.securityGate);
@@ -24,14 +27,23 @@ const scaleup=createScaleUpService({readSource:readDB,readValidation:validation.
   pd.scaleUpAuthorization={handoffId:h.id,decisionId:h.decisionId,scope:h.scope,mode:'local-demo',at:new Date().toISOString()};
   writeDB(db);
 }});
+const assistant=createAssistantService();
 app.use(express.json({limit:'1600kb'}));
 app.use('/api/templates',templates.router);
 app.use('/api/payments',payments.router);
 app.use('/api/validation',validation.router);
 app.use('/api/scale-up',scaleup.router);
+app.use('/api/assistant',assistant.router);
 app.use('/api',apiRouter);
+const frontendDist=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../frontend/dist');
+app.use(express.static(frontendDist));
+app.get('*',(req,res,next)=>{
+  if(req.path.startsWith('/api/'))return res.status(404).json({error:'API route not found.'});
+  res.sendFile(path.join(frontendDist,'index.html'),err=>err&&next(err));
+});
 app.use((err,_req,res,_next)=>res.status(err.status||500).json({error:err.status===413?'Upload too large. Maximum file size is 1 MB.':'Request could not be processed.'}));
 const port=process.env.PORT||4001;
-const server=app.listen(port,'127.0.0.1',()=>console.log(`Vyavsay listening at http://127.0.0.1:${port} (local seed-connected payment demo)`));
+const host=process.env.HOST||'0.0.0.0';
+const server=app.listen(port,host,()=>console.log(`Vyavsay listening at http://${host}:${port}`));
 function shutdown(){server.close(()=>{templates.close();scaleup.close();payments.close();validation.close();process.exit(0);});}
 process.on('SIGTERM',shutdown);process.on('SIGINT',shutdown);

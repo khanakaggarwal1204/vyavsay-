@@ -25,6 +25,8 @@ async function request(path, options) {
 }
 
 export const api = {
+  queryAssistant: (payload) => request("/assistant/query", { method: "POST", body: JSON.stringify(payload) }),
+  getAssistantSession: (sessionId) => request(`/assistant/sessions/${encodeURIComponent(sessionId)}`),
   getChallenges: () => request("/challenges"),
   getChallenge: (id) => request(`/challenges/${id}`),
   createChallenge: (payload) => request("/challenges", { method: "POST", body: JSON.stringify(payload) }),

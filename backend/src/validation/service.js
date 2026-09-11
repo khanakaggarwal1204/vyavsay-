@@ -13,7 +13,7 @@ export function createValidationService({readSource,readPayments,filename,interv
   router.use((req,res,next)=>{
     res.set('Cache-Control','no-store');
     const origin=req.get('origin');
-    if(origin){try{requireThat(['localhost','127.0.0.1','[::1]'].includes(new URL(origin).hostname),'Local demo requests only.',403);}catch(e){return res.status(403).json({error:'Local demo requests only.'});}}
+    if(origin){try{const url=new URL(origin),local=['localhost','127.0.0.1','[::1]'].includes(url.hostname),sameOrigin=url.host===req.get('host');requireThat(local||sameOrigin,'Cross-origin requests are not allowed.',403);}catch(e){return res.status(403).json({error:e.status?e.message:'Invalid origin.'});}}
     next();
   });
   router.get('/accounts',(_req,res)=>res.json({mode:'local-demo',accounts:accounts(readSource())}));

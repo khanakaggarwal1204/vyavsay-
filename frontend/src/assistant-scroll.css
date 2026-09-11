@@ -1,0 +1,3 @@
+.assistant-chat{min-height:0;overflow:hidden}
+.assistant-messages{min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin}
+@media(max-width:700px){.assistant-chat{min-height:0}.assistant-messages{min-height:0}}

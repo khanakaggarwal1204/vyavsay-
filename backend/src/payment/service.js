@@ -11,9 +11,8 @@ export function createPaymentService({filename,readSource,intervalMs=60000}={}) 
  const router=Router();
  router.use((req,res,next)=>{
   res.set('Cache-Control','no-store');
-  // This service intentionally runs only on loopback with freely selectable demo accounts.
   const origin=req.get('origin');
-  if(origin){try{if(!['localhost','127.0.0.1','[::1]'].includes(new URL(origin).hostname))return res.status(403).json({error:'Local demo requests only.'});}catch{return res.status(403).json({error:'Invalid origin.'});}}
+  if(origin){try{const url=new URL(origin),local=['localhost','127.0.0.1','[::1]'].includes(url.hostname),sameOrigin=url.host===req.get('host');if(!local&&!sameOrigin)return res.status(403).json({error:'Cross-origin requests are not allowed.'});}catch{return res.status(403).json({error:'Invalid origin.'});}}
   next();
  });
  router.get('/accounts',(_req,res)=>res.json({mode:'local-demo',accounts:accountsFor(readSource())}));
