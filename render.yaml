@@ -7,3 +7,6 @@ services:
     startCommand: npm start --prefix backend
     healthCheckPath: /
     autoDeployTrigger: commit
+    envVars:
+      - key: VYAVSAY_DEMO_MODE
+        value: "true"

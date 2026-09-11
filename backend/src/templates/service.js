@@ -190,7 +190,9 @@ export function createTemplateService({
   now = () => new Date().toISOString(),
   policyFile = process.env.VYAVSAY_PROCUREMENT_RULES,
   resolveActor,
-  demo = process.env.NODE_ENV !== "production",
+  demo =
+    process.env.VYAVSAY_DEMO_MODE === "true" ||
+    process.env.NODE_ENV !== "production",
 } = {}) {
   const policies = loadPolicies(policyFile),
     store = createTemplateStore(filename),
