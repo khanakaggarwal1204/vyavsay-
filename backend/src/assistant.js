@@ -215,8 +215,8 @@ export function createAssistantService() {
         signal: AbortSignal.timeout(25000),
         headers: { "x-goog-api-key": process.env.GEMINI_API_KEY, "Content-Type": "application/json" },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: `Speak in a warm, natural, professional Indian female voice with relaxed pacing. Read only this response: ${text}` }] }],
-          generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: process.env.GEMINI_TTS_VOICE || "Kore" } } } },
+          contents: [{ parts: [{ text: `You are Aanya, a friendly young Indian woman guiding one person through the Vyavsay platform. Speak conversationally with gentle warmth, natural varied intonation, and short pauses at punctuation. Use a calm medium-slow pace. Do not sound like an announcer, presentation narrator, IVR, or robot. Read only the response below and do not add or remove words.\n\n${text}` }] }],
+          generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: process.env.GEMINI_TTS_VOICE || "Aoede" } } } },
         }),
       });
       if (!response.ok) throw new Error(`Gemini TTS returned ${response.status}`);

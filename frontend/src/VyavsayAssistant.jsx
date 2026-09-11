@@ -90,11 +90,16 @@ export default function VyavsayAssistant({
     const speakNow = () => {
       const voices = window.speechSynthesis.getVoices();
       const voice = voices.find((item) => /sandy/i.test(item.name)) || voices.find((item) => /samantha/i.test(item.name)) || voices.find((item) => /ava|allison|karen|victoria|zira|veena|raveena/i.test(item.name));
+      if (!voice) {
+        setSpeaking(false);
+        setError("Natural female voice is temporarily unavailable.");
+        return;
+      }
       const utterance = new SpeechSynthesisUtterance(text.replace(/\bVyav(?:a)?say\b/gi, "vyuh-vuh-saay"));
-      if (voice) utterance.voice = voice;
-      utterance.lang = voice?.lang || "en-IN";
-      utterance.rate = 0.94;
-      utterance.pitch = 1.04;
+      utterance.voice = voice;
+      utterance.lang = voice.lang || "en-IN";
+      utterance.rate = 0.92;
+      utterance.pitch = 1.02;
       utterance.onstart = () => setSpeaking(true);
       utterance.onend = () => setSpeaking(false);
       utterance.onerror = () => setSpeaking(false);
