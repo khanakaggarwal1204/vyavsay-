@@ -5,6 +5,7 @@
 
 async function request(path, options) {
   const res = await fetch(`/api${path}`, {
+    credentials: "same-origin", // send the httpOnly vyavsay_session cookie
     headers: { "Content-Type": "application/json" },
     ...options,
   });
@@ -86,4 +87,13 @@ export const api = {
       body: JSON.stringify({ startupId, scopeLabel, durationMonths }),
     }),
   advancePilotPhase: (pilotDesignId) => request(`/pilot-design/${pilotDesignId}/advance`, { method: "POST" }),
+
+  // Authentication: registration is verified per role (CIN + DPIIT for
+  // startups, official email domain for government officials, admin-issued
+  // invite codes for Expert Evaluator / Validation Agency / Platform Admin).
+  getRoles: () => request("/auth/roles"),
+  register: (payload) => request("/auth/register", { method: "POST", body: JSON.stringify(payload) }),
+  login: (email, password) => request("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
+  logout: () => request("/auth/logout", { method: "POST" }),
+  getMe: () => request("/auth/me"),
 };

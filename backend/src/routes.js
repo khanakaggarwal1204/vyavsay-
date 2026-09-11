@@ -8,6 +8,10 @@ import { weightsForChallenge, rubricMessage, validateScores, computeTotal, rankE
 import { computePilotPerformance, validateKpiTarget } from "./performance.js";
 import { generateContract, contractProgress, MILESTONE_STATUSES } from "./contracting.js";
 import { validatePilotDesign, createPilotDesign, advancePhase } from "./pilotDesign.js";
+import {
+  ROLES, hashPassword, verifyPassword, validatePassword, verifyRegistration, isValidEmail,
+  createSession, findSession, destroySession, checkLockout, recordFailedAttempt, clearFailedAttempts, publicUser,
+} from "./auth.js";
 
 const router = Router();
 let paymentProjection = c => c;
@@ -19,6 +23,32 @@ export function setPaymentProjection(fn) { paymentProjection = fn; }
 
 function findChallenge(db, id) {
   return db.challenges.find((c) => c.id === id);
+}
+
+function readSessionToken(req) {
+  return (req.headers.cookie || "").split(";").map((x) => x.trim()).find((x) => x.startsWith("vyavsay_session="))?.split("=")[1] || null;
+}
+
+/** Populates req.user when a valid session cookie is present. Never blocks the request. */
+function attachUser(req, _res, next) {
+  const token = readSessionToken(req);
+  const db = readDB();
+  const session = token && findSession(db, token);
+  req.user = session ? db.users?.find((u) => u.id === session.userId) : null;
+  next();
+}
+router.use(attachUser);
+
+function requireAuth(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: "Sign in to continue." });
+  next();
+}
+
+function requireRole(...roles) {
+  return (req, res, next) => {
+    if (!req.user || !roles.includes(req.user.role)) return res.status(403).json({ error: "You don't have permission to do that." });
+    next();
+  };
 }
 
 function findStartup(db, id) {
@@ -104,7 +134,7 @@ router.get("/challenges/:id", (req, res) => {
 // Turns a department's free-form problem description into a standard,
 // structured requirement statement instead of a free-form request. Stateless
 // — call as many times as the department edits their draft.
-router.post("/requirements/structure", (req, res) => {
+router.post("/requirements/structure", requireRole("Government Official", "Platform Admin"), (req, res) => {
   const { title, objective, beneficiaries, painPoint, outcome, constraints } = req.body || {};
   const result = structureRequirement({ title, objective, beneficiaries, painPoint, outcome, constraints });
   res.json(result);
@@ -115,7 +145,7 @@ router.post("/requirements/structure", (req, res) => {
 // created this way immediately works with AI Startup Discovery and
 // Auto-Eligibility Screening, since those key off the same `theme`/`risk`
 // fields as the seeded demo challenges.
-router.post("/challenges", (req, res) => {
+router.post("/challenges", requireRole("Government Official", "Platform Admin"), (req, res) => {
   const db = readDB();
   const { title, dept, budget, risk, theme, requirementStatement, capabilities, deadline, location } = req.body || {};
   if (!title || !title.trim()) return res.status(400).json({ error: "title is required" });
@@ -178,7 +208,7 @@ router.get("/challenges/:id/applications", (req, res) => {
 
 // Submits a new application (a startup applying, or a department inviting a
 // shortlisted startup) and immediately runs the eligibility check against it.
-router.post("/challenges/:id/applications", (req, res) => {
+router.post("/challenges/:id/applications", requireRole("Startup"), (req, res) => {
   const db = readDB();
   const challenge = findChallenge(db, req.params.id);
   if (!challenge) return res.status(404).json({ error: "Challenge not found" });
@@ -244,7 +274,7 @@ router.get("/challenges/:id/evaluations", (req, res) => {
 // An evaluator submits scores (0–10) for every rubric category against a
 // startup. The weighted total and startup ranking are always derived from
 // this same rubric, so every evaluator's scores are directly comparable.
-router.post("/challenges/:id/evaluations", (req, res) => {
+router.post("/challenges/:id/evaluations", requireRole("Expert Evaluator", "Platform Admin"), (req, res) => {
   const db = readDB();
   const challenge = findChallenge(db, req.params.id);
   if (!challenge) return res.status(404).json({ error: "Challenge not found" });
@@ -311,7 +341,7 @@ router.get("/challenges/:id/pilot", (req, res) => {
 
 // Creates a pilot with its KPI targets locked in for good — baseline and
 // target are only ever set here, at pilot start.
-router.post("/pilots", (req, res) => {
+router.post("/pilots", requireRole("Government Official", "Platform Admin"), (req, res) => {
   const db = readDB();
   const { challengeId, startupId, name, kpis } = req.body || {};
 
@@ -346,7 +376,7 @@ router.post("/pilots", (req, res) => {
 // Records a new field reading for one KPI. This is the ONLY thing that can
 // ever change after a pilot starts — the locked baseline/target are
 // untouched, so the achievement % is always computed fresh, automatically.
-router.patch("/pilots/:id/kpis/:key", (req, res) => {
+router.patch("/pilots/:id/kpis/:key", requireRole("Government Official", "Validation Agency", "Platform Admin"), (req, res) => {
   const db = readDB();
   const pilot = findPilot(db, req.params.id);
   if (!pilot) return res.status(404).json({ error: "Pilot not found" });
@@ -380,7 +410,7 @@ router.get("/challenges/:id/contracts", (req, res) => {
   res.json({ challengeId: challenge.id, contracts });
 });
 
-router.post("/challenges/:id/contracts", (req, res) => {
+router.post("/challenges/:id/contracts", requireRole("Government Official", "Platform Admin"), (req, res) => {
   const db = readDB();
   const challenge = findChallenge(db, req.params.id);
   if (!challenge) return res.status(404).json({ error: "Challenge not found" });
@@ -427,7 +457,7 @@ router.get("/challenges/:id/pilot-design", (req, res) => {
   res.json({ challengeId: challenge.id, pilotDesign: pd ? decoratePilotDesign(pd, db) : null });
 });
 
-router.post("/challenges/:id/pilot-design", (req, res) => {
+router.post("/challenges/:id/pilot-design", requireRole("Government Official", "Platform Admin"), (req, res) => {
   const db = readDB();
   const challenge = findChallenge(db, req.params.id);
   if (!challenge) return res.status(404).json({ error: "Challenge not found" });
@@ -451,7 +481,7 @@ router.post("/challenges/:id/pilot-design", (req, res) => {
 
 // Mark the current active phase as passed and unlock the next one — the
 // only way a pilot can progress toward a live rollout.
-router.post("/pilot-design/:id/advance", (req, res) => {
+router.post("/pilot-design/:id/advance", requireRole("Government Official", "Validation Agency", "Platform Admin"), (req, res) => {
   const db = readDB();
   const pd = (db.pilotDesigns || []).find((p) => p.id === req.params.id);
   if (!pd) return res.status(404).json({ error: "Pilot design not found" });
@@ -471,9 +501,118 @@ router.post("/pilot-design/:id/advance", (req, res) => {
   res.json(decoratePilotDesign(result.pilotDesign, db));
 });
 
+/* --------------------------------- Auth ---------------------------------- */
+// Registration and legitimacy verification, scoped per role — see
+// backend/src/auth.js for the specifics of what each role has to prove.
+function setSessionCookie(res, token) {
+  res.cookie("vyavsay_session", token, { httpOnly: true, sameSite: "strict", maxAge: 8 * 3600000, secure: process.env.NODE_ENV === "production", path: "/" });
+}
+
+router.get("/auth/roles", (_req, res) => res.json({ roles: ROLES }));
+
+router.post("/auth/register", (req, res) => {
+  const db = readDB();
+  const { role, name, email, password } = req.body || {};
+
+  if (!ROLES.includes(role)) return res.status(400).json({ error: "Choose a valid role." });
+  if (!name || !name.trim()) return res.status(400).json({ error: "Name is required." });
+  if (!isValidEmail(email)) return res.status(400).json({ error: "Enter a valid email address." });
+  const passwordError = validatePassword(password);
+  if (passwordError) return res.status(400).json({ error: passwordError });
+
+  db.users = db.users || [];
+  if (db.users.some((u) => u.email.toLowerCase() === email.toLowerCase())) {
+    return res.status(409).json({ error: "An account with that email already exists." });
+  }
+
+  const verdict = verifyRegistration(role, { ...req.body, email }, db);
+  if (verdict.error) return res.status(422).json({ error: verdict.error });
+
+  const user = {
+    id: `usr_${randomUUID()}`,
+    role,
+    name: name.trim(),
+    email: email.toLowerCase(),
+    passwordHash: hashPassword(password),
+    verificationStatus: verdict.verificationStatus,
+    verificationNote: verdict.verificationNote,
+    profile: verdict.profile,
+    createdAt: new Date().toISOString(),
+  };
+  db.users.push(user);
+
+  if (verdict.consumesInvite) verdict.consumesInvite.usedBy = user.id;
+
+  db.authAudit = db.authAudit || [];
+  db.authAudit.push({ id: `aa_${randomUUID()}`, type: "register", userId: user.id, role, email: user.email, verificationStatus: user.verificationStatus, at: user.createdAt });
+
+  const token = createSession(db, user.id);
+  writeDB(db);
+
+  setSessionCookie(res, token);
+  res.status(201).json({ user: publicUser(user), token });
+});
+
+router.post("/auth/login", (req, res) => {
+  const db = readDB();
+  const { email, password } = req.body || {};
+  if (!isValidEmail(email) || !password) return res.status(400).json({ error: "Enter your email and password." });
+
+  const lockoutError = checkLockout(email.toLowerCase());
+  if (lockoutError) return res.status(429).json({ error: lockoutError });
+
+  const user = (db.users || []).find((u) => u.email.toLowerCase() === email.toLowerCase());
+  const ok = user && verifyPassword(password, user.passwordHash);
+
+  db.authAudit = db.authAudit || [];
+  if (!ok) {
+    recordFailedAttempt(email.toLowerCase());
+    db.authAudit.push({ id: `aa_${randomUUID()}`, type: "login_failed", email: email.toLowerCase(), at: new Date().toISOString() });
+    writeDB(db);
+    // Deliberately generic — never reveal whether the email itself is registered.
+    return res.status(401).json({ error: "Invalid email or password." });
+  }
+
+  clearFailedAttempts(email.toLowerCase());
+  const token = createSession(db, user.id);
+  db.authAudit.push({ id: `aa_${randomUUID()}`, type: "login", userId: user.id, role: user.role, email: user.email, at: new Date().toISOString() });
+  writeDB(db);
+
+  setSessionCookie(res, token);
+  res.json({ user: publicUser(user), token });
+});
+
+router.post("/auth/logout", (req, res) => {
+  const token = readSessionToken(req) || (req.body && req.body.token);
+  if (token) {
+    const db = readDB();
+    destroySession(db, token);
+    writeDB(db);
+  }
+  res.set("Set-Cookie", "vyavsay_session=; HttpOnly; SameSite=Strict; Max-Age=0; Path=/");
+  res.json({ ok: true });
+});
+
+router.get("/auth/me", requireAuth, (req, res) => res.json({ user: publicUser(req.user) }));
+
+// Platform Admin only: issue a single-use invite code for one of the
+// oversight roles (Expert Evaluator, Validation Agency, Platform Admin).
+router.post("/auth/invites", requireRole("Platform Admin"), (req, res) => {
+  const db = readDB();
+  const { role } = req.body || {};
+  if (!["Expert Evaluator", "Validation Agency", "Platform Admin"].includes(role)) {
+    return res.status(400).json({ error: "role must be one of: Expert Evaluator, Validation Agency, Platform Admin" });
+  }
+  const code = randomUUID().split("-")[0].toUpperCase();
+  db.inviteCodes = db.inviteCodes || [];
+  db.inviteCodes.push({ code, role, issuedBy: req.user.id, issuedAt: new Date().toISOString(), usedBy: null });
+  writeDB(db);
+  res.status(201).json({ code, role });
+});
+
 /* --------------------------------- Admin -------------------------------- */
 // Resets the demo data store back to its seed state.
-router.post("/admin/reset", (_req, res) => {
+router.post("/admin/reset", requireRole("Platform Admin"), (_req, res) => {
   const db = resetDB();
   res.json({
     ok: true,
@@ -484,6 +623,7 @@ router.post("/admin/reset", (_req, res) => {
     pilots: (db.pilots || []).length,
     contracts: (db.contracts || []).length,
     pilotDesigns: (db.pilotDesigns || []).length,
+    users: (db.users || []).length,
   });
 });
 

@@ -230,7 +230,7 @@ function Card({ children, style, className = "", noPad, onClick }) {
   );
 }
 
-function Btn({ children, variant = "primary", icon: Icon, onClick, small, style, disabled }) {
+function Btn({ children, variant = "primary", icon: Icon, onClick, small, style, disabled, type = "button" }) {
   const base = {
     display: "inline-flex", alignItems: "center", gap: 6, fontWeight: 600,
     fontSize: small ? 12.5 : 13.5, padding: small ? "6px 11px" : "9px 16px",
@@ -245,7 +245,7 @@ function Btn({ children, variant = "primary", icon: Icon, onClick, small, style,
     danger: { background: "#fff", color: C.rust, border: `1px solid ${C.rust}55` },
   };
   return (
-    <button onClick={disabled ? undefined : onClick} disabled={disabled} style={{ ...base, ...variants[variant], ...style }}
+    <button type={type} onClick={disabled ? undefined : onClick} disabled={disabled} style={{ ...base, ...variants[variant], ...style }}
       onMouseOver={(e) => { if (!disabled) e.currentTarget.style.opacity = 0.85; }}
       onMouseOut={(e) => { if (!disabled) e.currentTarget.style.opacity = 1; }}>
       {Icon && <Icon size={small ? 14 : 15} />}
@@ -443,6 +443,33 @@ const NAV = [
 ];
 
 const ROLES = ["Government Official", "Startup", "Expert Evaluator", "Validation Agency", "Platform Admin"];
+
+/* ---------------------------------------------------------------------- */
+/*  ROLE-BASED ACCESS — every nav destination is explicitly allow-listed   */
+/*  per role. Platform Admin sees everything for oversight; every other    */
+/*  role only sees the workspaces relevant to it. This list is the single  */
+/*  source of truth for both the sidebar (what's shown) and the router     */
+/*  (what's actually renderable) — see canAccess() below.                  */
+/* ---------------------------------------------------------------------- */
+const NAV_BY_ROLE = {
+  "Government Official": ["dashboard", "challenges", "marketplace", "pilots", "contracts", "payments", "templates"],
+  "Startup": ["dashboard", "challenges", "pilots", "contracts", "payments", "validation", "scaleup", "templates"],
+  "Expert Evaluator": ["dashboard", "challenges", "evaluation", "templates"],
+  "Validation Agency": ["dashboard", "validation", "scaleup", "templates"],
+  "Platform Admin": NAV.map((n) => n.key),
+};
+
+// Detail/flow views reachable from an allowed nav item but not in NAV itself.
+const VIEW_PARENT = { "challenge-detail": "challenges", "create-challenge": "challenges" };
+
+function canAccess(role, view) {
+  const allowed = NAV_BY_ROLE[role] || [];
+  return allowed.includes(VIEW_PARENT[view] || view);
+}
+
+function defaultViewFor(role) {
+  return (NAV_BY_ROLE[role] && NAV_BY_ROLE[role][0]) || "dashboard";
+}
 
 /* ---------------------------------------------------------------------- */
 /*  APP SHELL                                                              */
@@ -770,23 +797,219 @@ function Footer() {
   );
 }
 
+/* ---------------------------------------------------------------------- */
+/*  AUTH GATE — sign in, or register with role-specific legitimacy checks. */
+/*  Startups: MCA-format CIN (+ optional DPIIT number for instant verify). */
+/*  Government officials: official email domain allow-list.               */
+/*  Expert Evaluator / Validation Agency / Platform Admin: admin-issued,   */
+/*  single-use invite code — these oversight roles aren't open self-signup.*/
+/*  See backend/src/auth.js.                                               */
+/* ---------------------------------------------------------------------- */
+const INVITE_ONLY_ROLES = ["Expert Evaluator", "Validation Agency", "Platform Admin"];
+
+function AuthGate({ initialMode = "login", initialRole = "Startup", nextView, onAuthenticated, onCancel }) {
+  const [mode, setMode] = useState(initialMode);
+  const [role, setRole] = useState(initialRole);
+  const [fields, setFields] = useState({ name: "", email: "", password: "" });
+  const set = (k) => (e) => setFields((f) => ({ ...f, [k]: e.target.value }));
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Lightweight client-side checks so obviously-incomplete submissions never
+  // round-trip to the server — the backend still re-validates everything
+  // (see backend/src/auth.js), this is purely for faster, friendlier feedback.
+  function clientError() {
+    const email = (fields.email || "").trim();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return "Enter a valid email address.";
+    if (!fields.password) return "Enter your password.";
+    if (mode === "login") return null;
+    if (fields.password.length < 8 || !/[0-9]/.test(fields.password) || !/[a-zA-Z]/.test(fields.password)) {
+      return "Password must be at least 8 characters and include a letter and a number.";
+    }
+    if (!fields.name || !fields.name.trim()) return "Full name is required.";
+    if (role === "Startup") {
+      if (!fields.companyName || !fields.companyName.trim()) return "Company name is required.";
+      if (!/^[LU]\d{5}[A-Z]{2}\d{4}[A-Z]{3}\d{6}$/.test((fields.cin || "").toUpperCase().trim())) {
+        return "Enter a valid 21-character CIN (e.g. U72900MH2019PTC123456).";
+      }
+    }
+    if (role === "Government Official") {
+      if (!fields.department || !fields.department.trim()) return "Department is required.";
+      if (!fields.designation || !fields.designation.trim()) return "Designation is required.";
+      if (!/\.gov\.in$|\.nic\.in$/.test(email.toLowerCase())) return "Use your official government email address.";
+    }
+    if (INVITE_ONLY_ROLES.includes(role) && !(fields.inviteCode || "").trim()) {
+      return "An invite code from a Platform Admin is required for this role.";
+    }
+    return null;
+  }
+
+  async function submit(e) {
+    if (e) e.preventDefault();
+    const localError = clientError();
+    if (localError) { setError(localError); return; }
+    setError(null);
+    setSubmitting(true);
+    try {
+      const res = mode === "login"
+        ? await api.login(fields.email.trim(), fields.password)
+        : await api.register({ ...fields, role, email: fields.email.trim(), name: fields.name.trim() });
+      onAuthenticated(res.user, nextView);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(10,20,35,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 20 }}>
+      <div style={{ background: "#fff", borderRadius: 8, width: 460, maxWidth: "100%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(10,20,35,0.35)" }}>
+        <div style={{ padding: "18px 22px", borderBottom: `1px solid ${C.line}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <BrandMark size={26} />
+          <X size={18} color={C.inkSoft} style={{ cursor: "pointer" }} onClick={onCancel} />
+        </div>
+        <form style={{ padding: 22 }} onSubmit={submit}>
+          <div style={{ display: "flex", gap: 4, background: C.paper, borderRadius: 6, padding: 3, marginBottom: 18 }}>
+            {["login", "register"].map((m) => (
+              <div key={m} onClick={() => { setMode(m); setError(null); }}
+                style={{
+                  flex: 1, textAlign: "center", padding: "8px 0", borderRadius: 5, fontSize: 12.8, fontWeight: 700, cursor: "pointer",
+                  background: mode === m ? "#fff" : "transparent", color: mode === m ? C.ink : C.inkSoft,
+                  boxShadow: mode === m ? "0 1px 4px rgba(10,20,35,0.12)" : "none",
+                }}>
+                {m === "login" ? "Sign in" : "Register"}
+              </div>
+            ))}
+          </div>
+
+          {mode === "register" && (
+            <Field label="I am registering as">
+              <select style={inputStyle} value={role} onChange={(e) => setRole(e.target.value)}>
+                {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </Field>
+          )}
+          {mode === "register" && <Field label="Full name"><input style={inputStyle} value={fields.name} onChange={set("name")} /></Field>}
+          <Field label={mode === "register" && role === "Government Official" ? "Official email" : "Email"}>
+            <input type="email" style={inputStyle} value={fields.email} onChange={set("email")}
+              placeholder={mode === "register" && role === "Government Official" ? "name@maharashtra.gov.in" : ""} />
+          </Field>
+          <Field label="Password" hint={mode === "register" ? "At least 8 characters, with a letter and a number." : undefined}>
+            <input type="password" style={inputStyle} value={fields.password} onChange={set("password")} />
+          </Field>
+
+          {mode === "register" && role === "Startup" && (
+            <>
+              <Field label="Company name"><input style={inputStyle} value={fields.companyName || ""} onChange={set("companyName")} /></Field>
+              <Field label="CIN (Corporate Identification Number)" hint="21-character MCA registration number — confirms this is a registered legal entity.">
+                <input style={inputStyle} placeholder="U72900MH2019PTC123456" value={fields.cin || ""} onChange={set("cin")} />
+              </Field>
+              <Field label="DPIIT recognition number (optional)" hint="Provide this for instant verification. Without it your account is created as Pending Verification, subject to manual document review.">
+                <input style={inputStyle} value={fields.dpiitNumber || ""} onChange={set("dpiitNumber")} />
+              </Field>
+              <Field label="Sector (optional)"><input style={inputStyle} value={fields.sector || ""} onChange={set("sector")} /></Field>
+            </>
+          )}
+
+          {mode === "register" && role === "Government Official" && (
+            <>
+              <Field label="Department"><input style={inputStyle} value={fields.department || ""} onChange={set("department")} /></Field>
+              <Field label="Designation"><input style={inputStyle} value={fields.designation || ""} onChange={set("designation")} /></Field>
+              <Field label="Employee / government ID (optional)"><input style={inputStyle} value={fields.employeeId || ""} onChange={set("employeeId")} /></Field>
+            </>
+          )}
+
+          {mode === "register" && INVITE_ONLY_ROLES.includes(role) && (
+            <>
+              <Field label="Organization / affiliation"><input style={inputStyle} value={fields.organization || ""} onChange={set("organization")} /></Field>
+              <Field label="Invite code" hint="Issued by a Platform Admin — this role can't be self-registered without one.">
+                <input style={inputStyle} value={fields.inviteCode || ""} onChange={set("inviteCode")} />
+              </Field>
+            </>
+          )}
+
+          {error && <div role="alert" style={{ fontSize: 12.5, color: C.rust, background: `${C.rust}10`, padding: "9px 11px", borderRadius: 5, marginBottom: 14 }}>{error}</div>}
+
+          <Btn type="submit" style={{ width: "100%", justifyContent: "center" }} disabled={submitting}>
+            {submitting ? (mode === "login" ? "Signing in…" : "Creating account…") : (mode === "login" ? "Sign in" : "Create account")}
+          </Btn>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [entered, setEntered] = useState(false);
   const [view, setView] = useState("dashboard");
   const [role, setRole] = useState("Government Official");
   const [selectedChallenge, setSelectedChallenge] = useState(null);
   const [roleMenuOpen, setRoleMenuOpen] = useState(false);
+  const [authUser, setAuthUser] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [authGate, setAuthGate] = useState(null); // null | { mode, role, nextView }
+
+  // Hydrate an existing session (httpOnly cookie) on load, if any.
+  useEffect(() => {
+    api.getMe().then((res) => setAuthUser(res.user)).catch(() => {}).finally(() => setAuthChecked(true));
+  }, []);
 
   const goDetail = (ch) => { setSelectedChallenge(ch); setView("challenge-detail"); };
 
-  const enterAs = (r, nextView) => { setRole(r); if (nextView) setView(nextView); setEntered(true); };
+  // Land the person on a view their own role can actually see. A requested
+  // view that isn't on their role's allow-list (e.g. a stale link, or the
+  // "browse templates" shortcut clicked by a role that landed elsewhere)
+  // falls back to that role's default workspace instead of being honoured.
+  const enterAtRole = (userRole, nextView) => {
+    setRole(userRole);
+    setEntered(true);
+    setView(nextView && canAccess(userRole, nextView) ? nextView : defaultViewFor(userRole));
+  };
+
+  // Entry points from the overview page. Already-signed-in users go straight
+  // in, under their OWN role — the role tied to the button they clicked is
+  // only a hint for which login/register form to show a signed-out visitor.
+  const requestEntry = (r, nextView) => {
+    if (authUser) { enterAtRole(authUser.role, nextView); return; }
+    setAuthGate({ mode: r === "Startup" ? "register" : "login", role: r, nextView: nextView || "dashboard" });
+  };
+
+  const handleAuthenticated = (user, nextView) => {
+    setAuthUser(user);
+    setAuthGate(null);
+    enterAtRole(user.role, nextView);
+  };
+
+  const signOut = () => {
+    api.logout().catch(() => {});
+    setAuthUser(null);
+    setEntered(false);
+    setRoleMenuOpen(false);
+  };
+
+  // Safety net: if the current view ever falls outside what this role is
+  // allowed to see (e.g. role changes after re-hydrating a session, or a
+  // stale `view` survives a sign-in as a different role), snap back to a
+  // view the role can actually access rather than rendering it anyway.
+  useEffect(() => {
+    if (entered && !canAccess(role, view)) setView(defaultViewFor(role));
+  }, [entered, role, view]);
+
+  if (!authChecked) return null;
 
   if (!entered) {
     return (
       <div style={{ background: C.paper, minHeight: "100vh", color: C.ink, fontFamily: BODY_FONT }}>
         <style>{FONT_IMPORT}</style>
-        <Overview onEnter={enterAs} />
+        <Overview onEnter={requestEntry} />
         <VyavsayAssistant view="guest" avatarSrc={SAFE_GUIDE_AVATAR} role="Guest" />
+        {authGate && (
+          <AuthGate
+            initialMode={authGate.mode} initialRole={authGate.role} nextView={authGate.nextView}
+            onAuthenticated={handleAuthenticated} onCancel={() => setAuthGate(null)}
+          />
+        )}
       </div>
     );
   }
@@ -802,7 +1025,7 @@ export default function App() {
           </div>
         </div>
         <nav style={{ padding: "10px 10px", flex: 1, overflowY: "auto" }}>
-          {NAV.map((n) => {
+          {NAV.filter((n) => (NAV_BY_ROLE[role] || []).includes(n.key)).map((n) => {
             const active = view === n.key || (n.key === "challenges" && view === "challenge-detail") || (n.key === "challenges" && view === "create-challenge");
             const Icon = n.icon;
             return (
@@ -844,37 +1067,55 @@ export default function App() {
               <div style={{ width: 22, height: 22, borderRadius: "50%", background: C.brassSoft, color: C.brass, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700 }}>
                 {["payments", "validation", "scaleup", "templates"].includes(view) ? "W" : role[0]}
               </div>
-              <div style={{ fontSize: 12.5, fontWeight: 600 }}>{["payments", "validation", "scaleup", "templates"].includes(view) ? "Select account in workspace" : role}</div>
+              <div style={{ fontSize: 12.5, fontWeight: 600 }}>{["payments", "validation", "scaleup", "templates"].includes(view) ? "Select account in workspace" : (authUser?.name || role)}</div>
               {!["payments", "validation", "scaleup", "templates"].includes(view) && <ChevronDown size={14} color={C.inkSoft} />}
             </div>
             {!["payments", "validation", "scaleup", "templates"].includes(view) && roleMenuOpen && (
-              <div style={{ position: "absolute", right: 0, top: 38, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 5, width: 200, boxShadow: "0 6px 18px rgba(20,33,61,0.1)", zIndex: 20 }}>
-                <div style={{ padding: "8px 12px", fontSize: 10.5, color: C.inkSoft, fontWeight: 700, borderBottom: `1px solid ${C.line}` }}>VIEW PLATFORM AS</div>
-                {ROLES.map((r) => (
-                  <div key={r} onClick={() => { setRole(r); setRoleMenuOpen(false); }}
-                    style={{ padding: "9px 12px", fontSize: 13, cursor: "pointer", fontWeight: r === role ? 700 : 500, color: r === role ? C.ink : C.inkSoft }}>
-                    {r}
-                  </div>
-                ))}
+              <div style={{ position: "absolute", right: 0, top: 38, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 5, width: 236, boxShadow: "0 6px 18px rgba(20,33,61,0.1)", zIndex: 20 }}>
+                <div style={{ padding: "10px 12px", borderBottom: `1px solid ${C.line}` }}>
+                  <div style={{ fontSize: 13, fontWeight: 700 }}>{authUser?.name || role}</div>
+                  <div style={{ fontSize: 11, color: C.inkSoft }}>{authUser?.email || "Not signed in"}</div>
+                  <div style={{ fontSize: 11, color: C.inkSoft, marginTop: 2 }}>{role}</div>
+                  {authUser && (
+                    <div style={{ display: "inline-flex", alignItems: "center", gap: 4, marginTop: 6, fontSize: 10.5, fontWeight: 700, color: authUser.verificationStatus === "Verified" ? C.teal : C.brass }}>
+                      {authUser.verificationStatus === "Verified" ? <ShieldCheck size={11} /> : <AlertTriangle size={11} />}
+                      {authUser.verificationStatus}
+                    </div>
+                  )}
+                </div>
+                <div onClick={signOut} style={{ padding: "9px 12px", fontSize: 13, cursor: "pointer", color: C.rust, fontWeight: 600 }}>Sign out</div>
               </div>
             )}
           </div>
         </header>
 
+        {authUser && authUser.verificationStatus !== "Verified" && (
+          <div style={{ background: C.brassSoft, borderBottom: `1px solid ${C.brass}44`, padding: "9px 22px", fontSize: 12.5, color: C.ink, display: "flex", alignItems: "center", gap: 8 }}>
+            <AlertTriangle size={14} color={C.brass} />
+            {authUser.verificationNote || "Your account is pending verification."}
+          </div>
+        )}
+
         <main style={{ padding: 26, maxWidth: 1320 }}>
-          {view === "dashboard" && <Dashboard role={role} onOpenChallenge={goDetail} setView={setView} />}
-          {view === "challenges" && <ChallengesList onOpen={goDetail} onCreate={() => setView("create-challenge")} />}
-          {view === "challenge-detail" && <ChallengeDetail ch={selectedChallenge || CHALLENGES[0]} onBack={() => setView("challenges")} />}
-          {view === "create-challenge" && <CreateChallenge onDone={(newCh) => { if (newCh) { setSelectedChallenge(newCh); setView("challenge-detail"); } else { setView("challenges"); } }} />}
-          {view === "marketplace" && <Marketplace />}
-          {view === "evaluation" && <EvaluationWorkspace />}
-          {view === "pilots" && <Pilots />}
-          {view === "contracts" && <Contracts onPayments={() => setView("payments")} />}
-          {view === "payments" && <PaymentsWorkspace />}
-          {view === "validation" && <ValidationWorkspace onPayments={() => setView("payments")} />}
-          {view === "scaleup" && <ScaleUpWorkspace onValidation={() => setView("validation")} />}
-          {view === "templates" && <TemplatesWorkspace />}
-          {view === "admin" && <Admin />}
+          {!canAccess(role, view) ? (
+            <Unauthorized role={role} onBack={() => setView(defaultViewFor(role))} />
+          ) : (
+            <>
+              {view === "dashboard" && <Dashboard role={role} name={authUser?.name} onOpenChallenge={goDetail} setView={setView} />}
+              {view === "challenges" && <ChallengesList onOpen={goDetail} onCreate={() => setView("create-challenge")} />}
+              {view === "challenge-detail" && <ChallengeDetail ch={selectedChallenge || CHALLENGES[0]} onBack={() => setView("challenges")} />}
+              {view === "create-challenge" && <CreateChallenge onDone={(newCh) => { if (newCh) { setSelectedChallenge(newCh); setView("challenge-detail"); } else { setView("challenges"); } }} />}
+              {view === "marketplace" && <Marketplace />}
+              {view === "evaluation" && <EvaluationWorkspace />}
+              {view === "pilots" && <Pilots />}
+              {view === "contracts" && <Contracts onPayments={() => setView("payments")} />}
+              {view === "payments" && <PaymentsWorkspace />}
+              {view === "validation" && <ValidationWorkspace onPayments={() => setView("payments")} />}
+              {view === "scaleup" && <ScaleUpWorkspace onValidation={() => setView("validation")} />}
+              {view === "templates" && <TemplatesWorkspace />}
+              {view === "admin" && <Admin />}
+            </>
+          )}
         </main>
         <VyavsayAssistant view={view} avatarSrc={SAFE_GUIDE_AVATAR} role={role} contextRef={selectedChallenge?.id || null} />
       </div>
@@ -883,9 +1124,30 @@ export default function App() {
 }
 
 /* ---------------------------------------------------------------------- */
+/*  UNAUTHORIZED FALLBACK — shown if a role somehow lands on a view it     */
+/*  isn't permitted to see. Should be unreachable via normal navigation    */
+/*  (the sidebar and redirect effect already prevent it) but guards        */
+/*  against stale state.                                                  */
+/* ---------------------------------------------------------------------- */
+function Unauthorized({ role, onBack }) {
+  return (
+    <Card style={{ textAlign: "center", padding: "48px 24px", maxWidth: 480, margin: "40px auto" }}>
+      <div style={{ width: 44, height: 44, borderRadius: "50%", background: C.rustSoft, color: C.rust, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+        <Lock size={20} />
+      </div>
+      <h2 style={{ ...serif, fontSize: 19, margin: "0 0 8px", color: C.ink }}>You don't have access to this</h2>
+      <p style={{ fontSize: 13, color: C.inkSoft, lineHeight: 1.6, margin: "0 0 18px" }}>
+        This section isn't part of the {role} workspace. If you believe this is a mistake, contact a Platform Admin.
+      </p>
+      <Btn onClick={onBack}>Back to your dashboard</Btn>
+    </Card>
+  );
+}
+
+/* ---------------------------------------------------------------------- */
 /*  DASHBOARD                                                              */
 /* ---------------------------------------------------------------------- */
-function Dashboard({ role, onOpenChallenge, setView }) {
+function Dashboard({ role, name, onOpenChallenge, setView }) {
   const metrics = {
     "Government Official": [
       { label: "Active Challenges", value: "32", icon: Target, sub: "+4 this month" },
@@ -932,7 +1194,7 @@ function Dashboard({ role, onOpenChallenge, setView }) {
             <ShieldCheck size={13} /> Trusted government-startup workspace
           </div>
           <h1 style={{ ...serif, fontSize: 26, margin: 0, color: C.ink }}>
-            Welcome back, {role === "Startup" ? "Aabhanshi" : role}
+            Welcome back, {name || (role === "Startup" ? "there" : role)}
           </h1>
           <p style={{ fontSize: 13.2, color: C.inkSoft, lineHeight: 1.6, maxWidth: 560, margin: "8px 0 0" }}>
             Track challenges, pilots, contracts, validation evidence and payments through one transparent Vyavsay pipeline.

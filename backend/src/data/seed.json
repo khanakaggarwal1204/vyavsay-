@@ -46,5 +46,17 @@
       { "key": "field", "name": "Field Pilot", "description": "Limited real-world deployment, real data under DPA-covered scope.", "status": "Active" },
       { "key": "live", "name": "Live Rollout", "description": "Full production rollout with live citizen data.", "status": "Locked" }
     ] }
+  ],
+  "users": [
+    { "id": "usr_seed_admin", "role": "Platform Admin", "name": "Priya Nair", "email": "admin@vyavsay.gov.in", "passwordHash": "7da3c62c0618c010156d6e4b7540389d:0d0abeb423cbb03a1eda5d5dabec880b8364c66398a21e65f588beb1cc15d87b1412b10798948556da02d77d1fcc9ae2567dbd2478ad21b99293375c0ac2417d", "verificationStatus": "Verified", "verificationNote": "Seed demo account.", "profile": { "organization": "Vyavsay Platform Team" }, "createdAt": "2026-08-01T09:00:00.000Z" },
+    { "id": "usr_seed_govt", "role": "Government Official", "name": "Rohan Deshpande", "email": "rohan.deshpande@maharashtra.gov.in", "passwordHash": "b43b2950a7cc17d9f70c74991510bf16:3f4cf1dfd08555954702dccd0dd88b03a03b8dfe4bbb91700949c2aadbe5f66c9c7c43674ee90460e4878e85bb92e95657de4ac0348a42e2da311ec7b8427498", "verificationStatus": "Verified", "verificationNote": "Auto-verified: registered with an official government email domain.", "profile": { "department": "Skills, Employment & Innovation", "designation": "Deputy Secretary", "employeeId": "MH-IAS-2291" }, "createdAt": "2026-08-01T09:00:00.000Z" },
+    { "id": "usr_seed_startup", "role": "Startup", "name": "Ananya Kulkarni", "email": "ananya@tracknova.in", "passwordHash": "d4b541d55ee95cabc55cb2ff22ae6500:e8586a6f9946e9d4efeffca66e61a9d674843f317486a0ffcea5580b89786349e5e7daf8ea999005b68504c33673d706eade4d368307bf3010a322f8b68ca26a", "verificationStatus": "Verified", "verificationNote": "Auto-verified: valid CIN format and DPIIT recognition number on file.", "profile": { "companyName": "TrackNova", "cin": "U72900MH2019PTC123456", "dpiitNumber": "DIPP123456", "sector": "Transport · IoT", "website": null }, "createdAt": "2026-08-01T09:00:00.000Z" }
+  ],
+  "sessions": [],
+  "authAudit": [],
+  "inviteCodes": [
+    { "code": "EVAL-DEMO1", "role": "Expert Evaluator", "issuedBy": "usr_seed_admin", "issuedAt": "2026-08-01T09:00:00.000Z", "usedBy": null },
+    { "code": "VALID-DEMO1", "role": "Validation Agency", "issuedBy": "usr_seed_admin", "issuedAt": "2026-08-01T09:00:00.000Z", "usedBy": null },
+    { "code": "ADMIN-DEMO1", "role": "Platform Admin", "issuedBy": "usr_seed_admin", "issuedAt": "2026-08-01T09:00:00.000Z", "usedBy": null }
   ]
 }
