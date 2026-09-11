@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { randomUUID } from "node:crypto";
+import { EdgeTTS } from "edge-tts-universal";
 import { readDB, writeDB } from "./db.js";
 import { runEligibilityCheck } from "./eligibility.js";
 
@@ -173,6 +174,37 @@ export function pcmToWav(pcm, sampleRate = 24000) {
   return Buffer.concat([header, pcm]);
 }
 
+async function generateEdgeSpeech(text) {
+  const tts = new EdgeTTS(text, "en-IN-NeerjaExpressiveNeural", {
+    rate: "-5%",
+    pitch: "+2Hz",
+    volume: "+0%",
+  });
+  const result = await tts.synthesize();
+  const audio = Buffer.from(await result.audio.arrayBuffer());
+  if (!audio.length) throw new Error("Edge TTS returned no audio");
+  return { audio, contentType: result.audio.type || "audio/mpeg", provider: "edge-neerja" };
+}
+
+async function generateGeminiSpeech(text) {
+  if (!process.env.GEMINI_API_KEY) throw new Error("Gemini TTS is not configured");
+  const model = process.env.GEMINI_TTS_MODEL || "gemini-2.5-flash-preview-tts";
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+    method: "POST",
+    signal: AbortSignal.timeout(30000),
+    headers: { "x-goog-api-key": process.env.GEMINI_API_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: `You are Aanya, a friendly young Indian woman guiding one person through the Vyavsay platform. Speak conversationally with gentle warmth, natural varied intonation, and short pauses at punctuation. Use a calm medium-slow pace. Do not sound like an announcer, presentation narrator, IVR, or robot. Read only the response below and do not add or remove words.\n\n${text}` }] }],
+      generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } } } },
+    }),
+  });
+  if (!response.ok) throw new Error(`Gemini TTS returned ${response.status}`);
+  const data = await response.json();
+  const encoded = data.candidates?.[0]?.content?.parts?.find((part) => part.inlineData?.data)?.inlineData?.data;
+  if (!encoded) throw new Error("Gemini TTS returned no audio");
+  return { audio: pcmToWav(Buffer.from(encoded, "base64")), contentType: "audio/wav", provider: "gemini-aoede" };
+}
+
 export function createAssistantService() {
   const router = Router();
   router.post("/query", async (req, res, next) => {
@@ -211,36 +243,24 @@ export function createAssistantService() {
   router.post("/speech", async (req, res) => {
     const text = speechText(req.body?.text);
     if (!text) return res.status(422).json({ error: "text is required" });
-    if (!process.env.GEMINI_API_KEY) return res.status(503).json({ error: "Natural voice is not configured" });
     const cached = speechCache.get(text);
     if (cached) {
-      res.set({ "Content-Type": "audio/wav", "Cache-Control": "private, max-age=3600" });
-      return res.send(cached);
+      res.set({ "Content-Type": cached.contentType, "Cache-Control": "private, max-age=3600", "X-Voice-Provider": cached.provider });
+      return res.send(cached.audio);
     }
-    try {
-      const model = process.env.GEMINI_TTS_MODEL || "gemini-2.5-flash-preview-tts";
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
-        method: "POST",
-        signal: AbortSignal.timeout(60000),
-        headers: { "x-goog-api-key": process.env.GEMINI_API_KEY, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: `You are Aanya, a friendly young Indian woman guiding one person through the Vyavsay platform. Speak conversationally with gentle warmth, natural varied intonation, and short pauses at punctuation. Use a calm medium-slow pace. Do not sound like an announcer, presentation narrator, IVR, or robot. Read only the response below and do not add or remove words.\n\n${text}` }] }],
-          generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } } } },
-        }),
-      });
-      if (!response.ok) throw new Error(`Gemini TTS returned ${response.status}`);
-      const data = await response.json();
-      const encoded = data.candidates?.[0]?.content?.parts?.find((part) => part.inlineData?.data)?.inlineData?.data;
-      if (!encoded) throw new Error("Gemini TTS returned no audio");
-      const audio = pcmToWav(Buffer.from(encoded, "base64"));
-      speechCache.set(text, audio);
-      if (speechCache.size > 50) speechCache.delete(speechCache.keys().next().value);
-      res.set({ "Content-Type": "audio/wav", "Cache-Control": "private, max-age=3600" });
-      res.send(audio);
-    } catch (error) {
-      console.warn(`Natural voice failed: ${error.message}`);
-      res.status(502).json({ error: "Natural voice is temporarily unavailable" });
+    const providers = [generateEdgeSpeech, generateGeminiSpeech];
+    for (const generate of providers) {
+      try {
+        const result = await generate(text);
+        speechCache.set(text, result);
+        if (speechCache.size > 50) speechCache.delete(speechCache.keys().next().value);
+        res.set({ "Content-Type": result.contentType, "Cache-Control": "private, max-age=3600", "X-Voice-Provider": result.provider });
+        return res.send(result.audio);
+      } catch (error) {
+        console.warn(`Voice provider failed: ${error.message}`);
+      }
     }
+    res.status(502).json({ error: "Natural voice is temporarily unavailable" });
   });
   router.get("/sessions/:id", (req, res) => {
     const db = readDB();
