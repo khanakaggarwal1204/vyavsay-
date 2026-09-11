@@ -26,6 +26,7 @@ test("fallback library answers core platform questions", () => {
     ["When will I get paid for this milestone?", /startup submits evidence/],
   ];
   questions.forEach(([question, expected]) => assert.match(fallbackAnswer(question), expected, question));
+  assert.equal(fallbackAnswer("Compare two unusual deployment architectures", true), null);
 });
 
 test("speech output uses the Hindi pronunciation spelling", () => {

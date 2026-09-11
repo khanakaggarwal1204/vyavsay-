@@ -80,7 +80,7 @@ function liveAnswer(message, db, contextRef) {
   return null;
 }
 
-export function fallbackAnswer(message) {
+export function fallbackAnswer(message, reviewedOnly = false) {
   const text = message.toLowerCase();
   if (/(what is|about).*vyav(a)?say|how does vyav(a)?say work/.test(text)) return "Vyavsay is an auditable innovation-procurement platform that connects government challenges with eligible startups, controlled pilots, milestone payments, independent validation, and evidence-based scale-up.";
   if (/(9|nine|all).*(stage|lifecycle)|stage.*platform|workflow|what.*next/.test(text)) return "The nine stages are challenge identification, startup discovery, eligibility screening, expert evaluation, sandbox or pilot design, milestone-based contracting, performance measurement and payment, independent validation, and a human-authorised scale-up decision.";
@@ -104,8 +104,8 @@ export function fallbackAnswer(message) {
   if (/(payment|paid|milestone)/.test(text)) return "Milestone payment begins when the startup submits evidence and the department confirms completion. Finance receives a payment record with the due date, and overdue cases are escalated.";
   if (/(eligible|eligibility|qualif)/.test(text)) return "Eligibility screening checks registration, DPIIT status, experience and challenge-specific certifications. Open an application for its live result; the assistant will not invent one.";
   if (/(template|problem statement|pilot agreement|data.*ip|cybersecurity)/.test(text)) return "Vyavsay provides seven governed libraries: Problem Statement, Evaluation Criteria, Pilot Agreement, Data and IP Clauses, Cybersecurity, Risk Management, and Procurement Pathways. Drafts are validated, reviewed, versioned, and audited before use.";
-  if (/(hello|hi|namaste)/.test(text)) return "Namaste. I am your Vyavsay guide. Ask me about a workflow, template, challenge, application, pilot, payment, validation, or scale-up.";
-  return "I can help with Vyavsay, startup and government workflows, procurement terminology, templates, pilots, payments, validation, and navigation. For a live status or eligibility result, open the relevant record first so I can use verified data.";
+  if (/\b(hello|hi|namaste)\b/.test(text)) return "Namaste. I am your Vyavsay guide. Ask me about a workflow, template, challenge, application, pilot, payment, validation, or scale-up.";
+  return reviewedOnly ? null : "I can help with Vyavsay, startup and government workflows, procurement terminology, templates, pilots, payments, validation, and navigation. For a live status or eligibility result, open the relevant record first so I can use verified data.";
 }
 
 function platformContext(db, contextRef) {
@@ -116,7 +116,7 @@ function systemPrompt(role, context) {
   return `You are the Vyavsay guide for a ${role}. Vyavsay is an Indian government innovation-procurement platform. Give concise, practical answers about its workflows, startup participation, government challenges, templates, pilots, payments, validation, procurement terminology, and navigation. Answer in two to four short spoken sentences using plain text only, with no tables or markdown. You may explain general concepts using your knowledge. Never invent application, challenge, pilot, payment, eligibility, or marketplace data; only use facts present in VERIFIED CONTEXT. Do not name or cite a law, policy, scheme, regulation, deadline, monetary threshold, or government rule unless it appears in VERIFIED CONTEXT; direct the user to an authorised officer or official source instead. Never make an approval, rejection, funding, legal, or procurement decision. Explain the evidence and direct the user to the authorised human process. If a question is unrelated to Vyavsay or public innovation procurement, politely redirect. Spell the brand Vyavsay in text. VERIFIED CONTEXT: ${context}`;
 }
 async function fetchJson(url, options) {
-  const response = await fetch(url, { ...options, signal: AbortSignal.timeout(15000) });
+  const response = await fetch(url, { ...options, signal: AbortSignal.timeout(8000) });
   if (!response.ok) throw new Error(`Provider returned ${response.status}`);
   return response.json();
 }
@@ -136,13 +136,15 @@ async function askProviders(messages) {
     process.env.GEMINI_API_KEY && { name: "gemini", run: () => callGemini({ key: process.env.GEMINI_API_KEY, model: process.env.GEMINI_MODEL || "gemini-2.5-flash", messages }) },
     process.env.OPENROUTER_API_KEY && { name: "openrouter", run: () => callOpenAICompatible({ url: "https://openrouter.ai/api/v1/chat/completions", key: process.env.OPENROUTER_API_KEY, model: process.env.OPENROUTER_MODEL || "openrouter/free", messages, headers: { "HTTP-Referer": process.env.PUBLIC_URL || "https://vyavsay.onrender.com", "X-Title": "Vyavsay" } }) },
   ].filter(Boolean);
-  for (const provider of providers) {
-    try {
+  if (!providers.length) return null;
+  try {
+    return await Promise.any(providers.map(async (provider) => {
       const answer = await provider.run();
-      if (answer) return { answer, provider: provider.name };
-    } catch (error) {
-      console.warn(`Assistant provider ${provider.name} failed: ${error.message}`);
-    }
+      if (!answer) throw new Error("Provider returned an empty answer");
+      return { answer, provider: provider.name };
+    }));
+  } catch (error) {
+    console.warn(`All assistant providers failed: ${error.errors?.map((item) => item.message).join(", ") || error.message}`);
   }
   return null;
 }
@@ -191,8 +193,9 @@ export function createAssistantService() {
       if (contextRef) session.contextRef = contextRef;
       const effectiveContext = contextRef || session.contextRef;
       const live = liveAnswer(message, db, effectiveContext);
+      const reviewed = live ? null : fallbackAnswer(message, true);
       const history = db.chatMessages.filter((item) => item.sessionId === sessionId).slice(-8).map((item) => ({ role: item.speaker === "Assistant" ? "assistant" : "user", content: item.text }));
-      const generated = live || await askProviders([{ role: "system", content: systemPrompt(role, platformContext(db, effectiveContext)) }, ...history, { role: "user", content: message }]);
+      const generated = live || (reviewed ? { answer: reviewed, provider: "fallback-library" } : await askProviders([{ role: "system", content: systemPrompt(role, platformContext(db, effectiveContext)) }, ...history, { role: "user", content: message }]));
       const answer = generated?.answer || fallbackAnswer(message);
       const provider = live ? "vyavsay-data" : generated?.provider || "fallback-library";
       session.updatedAt = now;
