@@ -4,6 +4,7 @@ import { readDB, writeDB, resetDB } from "./db.js";
 import { matchStartupsForChallenge } from "./matching.js";
 import { runEligibilityCheck } from "./eligibility.js";
 import { structureRequirement } from "./structuring.js";
+import { structureWithLlm } from "./aiStructuring.js";
 import {
   challengeVisibleTo,
   draftCompleteness,
@@ -142,7 +143,7 @@ router.get("/challenges/:id", (req, res) => {
 // Turns a department's free-form problem description into a standard,
 // structured requirement statement instead of a free-form request. Stateless
 // — call as many times as the department edits their draft.
-router.post("/requirements/structure", requireRole("Government Official", "Platform Admin"), (req, res) => {
+router.post("/requirements/structure", requireRole("Government Official", "Platform Admin"), async (req, res, next) => {
   let fields;
   try {
     fields = normaliseChallengeDraft(req.body || {});
@@ -152,19 +153,28 @@ router.post("/requirements/structure", requireRole("Government Official", "Platf
   if (!fields.rawProblemStatement && !fields.objective && !fields.title) {
     return res.status(400).json({ error: "Add a plain-language problem, objective, or title before structuring." });
   }
-  const result = structureRequirement(fields);
-  const db = readDB();
-  db.aiStructuringLogs = db.aiStructuringLogs || [];
-  db.aiStructuringLogs.push({
-    id: `structure_${randomUUID()}`,
-    userId: req.user.id,
-    engine: "deterministic-policy-structuring-v1",
-    input: fields,
-    output: result,
-    createdAt: new Date().toISOString(),
-  });
-  writeDB(db);
-  res.json({ ...result, reviewRequired: true, engine: "deterministic-policy-structuring-v1" });
+  try {
+    const fallback = structureRequirement(fields);
+    const generated = await structureWithLlm(fields);
+    const result = generated?.suggestion ? { ...fallback, ...generated.suggestion } : fallback;
+    const engine = generated ? `llm:${generated.provider}` : "deterministic-policy-structuring-v1";
+
+    const db = readDB();
+    db.aiStructuringLogs = db.aiStructuringLogs || [];
+    db.aiStructuringLogs.push({
+      id: `structure_${randomUUID()}`,
+      userId: req.user.id,
+      engine,
+      model: generated?.model || null,
+      input: fields,
+      output: result,
+      createdAt: new Date().toISOString(),
+    });
+    writeDB(db);
+    res.json({ ...result, reviewRequired: true, engine, llmUsed: Boolean(generated) });
+  } catch (error) {
+    next(error);
+  }
 });
 
 function draftPayload(challenge) {

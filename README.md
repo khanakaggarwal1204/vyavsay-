@@ -47,11 +47,11 @@ before starting Vite, e.g. `VITE_API_URL=http://localhost:5000 npm run dev`.
 **Challenge Identification** — in Challenges → Create Challenge, capture the
 department, title, objective, beneficiaries and raw problem in plain language,
 then click **Structure with AI**. It calls
-`POST /api/requirements/structure`, which runs a rule-based engine
-(`backend/src/structuring.js`) that recognises common government problem
-patterns (lost/misplaced documents, urban waste, crop disease, public
-transport, rural healthcare, water quality, skilling-vs-jobs mismatch) and
-turns free text into an editable Requirement, measurable Expected Outcome,
+`POST /api/requirements/structure`, which uses a backend-only LLM (Gemini,
+Groq, or OpenRouter when configured) to create an editable drafting suggestion,
+validates the JSON response, logs the request and result, and falls back to a
+controlled rules engine when a provider is unavailable. It never publishes on
+its own; it turns free text into an editable Requirement, measurable Expected Outcome,
 Constraints, a challenge theme, and a list of concrete capabilities — e.g. "Our files frequently get
 lost during inter-department transfers" becomes "A secure digital
 document-tracking system with immutable audit trails and role-based access."
@@ -95,7 +95,7 @@ Open any challenge (Challenges → click a row) to see the other two:
 | GET | `/api/startups` | List all startups |
 | GET | `/api/challenges` | List all challenges |
 | GET | `/api/challenges/:id` | Get one challenge |
-| POST | `/api/requirements/structure` | Body containing the challenge fields — creates an auditable deterministic structuring suggestion with Requirement, Expected Outcome and Constraints. |
+| POST | `/api/requirements/structure` | Body containing the challenge fields — creates an auditable LLM drafting suggestion with Requirement, Expected Outcome and Constraints, with a deterministic fallback. |
 | POST | `/api/challenge-drafts` | Creates a private, autosaved Draft owned by the signed-in department user. |
 | PATCH | `/api/challenge-drafts/:id` | Saves an editable Draft and appends an audit-history event. |
 | POST | `/api/challenge-drafts/:id/submit` | Validates all required fields and moves a Draft to Under Review. |

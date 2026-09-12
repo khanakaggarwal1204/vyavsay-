@@ -7,6 +7,7 @@ import {
   validateDraftForReview,
 } from "../src/challengeIdentification.js";
 import { structureRequirement } from "../src/structuring.js";
+import { validateStructuredSuggestion } from "../src/aiStructuring.js";
 
 const readyDraft = {
   title: "Track lost department files",
@@ -44,4 +45,22 @@ test("private challenge records are visible only to their author or a Platform A
   assert.equal(challengeVisibleTo(challenge, { id: "gov-1", role: "Government Official" }), true);
   assert.equal(challengeVisibleTo(challenge, { id: "admin-1", role: "Platform Admin" }), true);
   assert.equal(challengeVisibleTo({ status: "Published" }, null), true);
+});
+
+test("LLM structuring output must contain complete, measurable JSON", () => {
+  const suggestion = validateStructuredSuggestion({
+    requirementStatement: "Provide a secure digital document tracking service with immutable audit trails and role-based access.",
+    expectedOutcome: "Reduce untraceable inter-department transfers by 30% within 4 months of pilot launch.",
+    constraints: "Integrate with existing records systems, protect departmental data, and follow applicable security requirements.",
+    theme: "GovTech",
+    capabilities: ["Audit trails", "Role-based access"],
+  });
+
+  assert.equal(suggestion.theme, "GovTech");
+  assert.equal(suggestion.capabilities.length, 2);
+  assert.equal(validateStructuredSuggestion({
+    requirementStatement: "Build a tracker.",
+    expectedOutcome: "Improve soon.",
+    constraints: "Use existing systems.",
+  }), null);
 });
