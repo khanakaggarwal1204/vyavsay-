@@ -3468,6 +3468,13 @@ function ScaleUp() {
 /*  ADMIN                                                                   */
 /* ---------------------------------------------------------------------- */
 function Admin() {
+  const [mockData, setMockData] = useState(null);
+  const [mockDataError, setMockDataError] = useState(null);
+
+  useEffect(() => {
+    api.getMockData().then(setMockData).catch((error) => setMockDataError(error.message));
+  }, []);
+
   return (
     <div>
       <SectionTitle eyebrow="PLATFORM GOVERNANCE" title="Admin Dashboard" />
@@ -3503,6 +3510,24 @@ function Admin() {
           ))}
         </Card>
       </div>
+      <Card style={{ marginTop: 18 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline", marginBottom: 10 }}>
+          <div style={{ fontWeight: 700 }}>Loaded mock data</div>
+          {mockData && <span style={{ fontSize: 12, color: C.inkSoft }}>{mockData.startups.length} startups · {mockData.governmentOfficials.length} government officials</span>}
+        </div>
+        {mockDataError && <div style={{ color: C.rust, fontSize: 12.5 }}>{mockDataError}</div>}
+        {!mockData && !mockDataError && <div style={{ color: C.inkSoft, fontSize: 12.5 }}>Loading mock records…</div>}
+        {mockData && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 14 }}>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 800, color: C.inkSoft, marginBottom: 6 }}>STARTUPS</div>
+            {mockData.startups.slice(0, 6).map((startup) => <div key={startup.id} style={{ fontSize: 12.5, padding: "5px 0", borderTop: `1px solid ${C.line}` }}><b>{startup.name}</b><span style={{ color: C.inkSoft }}> · {startup.field} · {startup.trl}</span></div>)}
+          </div>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 800, color: C.inkSoft, marginBottom: 6 }}>GOVERNMENT OFFICIALS</div>
+            {mockData.governmentOfficials.slice(0, 6).map((official) => <div key={official.id} style={{ fontSize: 12.5, padding: "5px 0", borderTop: `1px solid ${C.line}` }}><b>{official.name}</b><span style={{ color: C.inkSoft }}> · {official.designation}</span></div>)}
+          </div>
+        </div>}
+      </Card>
     </div>
   );
 }

@@ -194,6 +194,16 @@ function decoratePilotDesign(pd, db) {
 
 router.get("/health", (_req, res) => res.json({ ok: true }));
 
+// Presentation data is visible only to Platform Admins. Startup profiles are
+// also available through the regular marketplace endpoint.
+router.get("/admin/mock-data", requireRole("Platform Admin"), (_req, res) => {
+  const db = readDB();
+  res.json({
+    startups: (db.startups || []).filter((startup) => startup.mock).map(publicStartupProfile),
+    governmentOfficials: db.mockGovernmentOfficials || [],
+  });
+});
+
 /* ------------------------------- Startups ------------------------------ */
 router.get("/startups", (req, res) => {
   const db = readDB();

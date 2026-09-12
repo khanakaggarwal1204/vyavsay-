@@ -104,6 +104,7 @@ export const api = {
   // startups, official email domain for government officials, admin-issued
   // invite codes for Expert Evaluator / Validation Agency / Platform Admin).
   getRoles: () => request("/auth/roles"),
+  getMockData: () => request("/admin/mock-data"),
   // rememberMe defaults to true server-side when omitted, but we always send
   // it explicitly here so the checkbox state is unambiguous.
   register: (payload) => request("/auth/register", { method: "POST", body: JSON.stringify(payload) }),

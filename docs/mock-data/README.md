@@ -16,4 +16,4 @@ These CSV files are synthetic demo data. They are not real people, real governme
 
 Technology tags and certifications are semicolon-separated so the fields remain CSV-safe. Convert them to arrays when importing into the application.
 
-The current signup API does not bulk-import CSV records or accept plaintext passwords. Treat `initial_password` as development-only mock data; a future importer should hash it using the existing registration logic before storing it.
+The server imports these CSV rows idempotently when it starts. Startup rows appear in the normal Startup Marketplace. Government-official rows appear in the Platform Admin mock-data directory. The importer never creates login accounts from this CSV, and does not use the `initial_password` column; this avoids exposing shared mock credentials in the public deployment.

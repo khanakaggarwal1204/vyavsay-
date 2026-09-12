@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { syncMockData } from "./mockData.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SEED_PATH = path.join(__dirname, "data", "seed.json");
@@ -48,6 +49,13 @@ function syncFromSeed(db) {
       db[key] = [...(db[key] || []), ...missing];
       changed = true;
     }
+  }
+  try {
+    const mockSync = syncMockData(db);
+    changed ||= mockSync.changed;
+  } catch (error) {
+    // Demo CSVs enhance the local dataset but must not block core platform data.
+    console.warn("Unable to load mock data:", error.message);
   }
   if (changed) fs.writeFileSync(STORE_PATH, JSON.stringify(db, null, 2));
   return db;
