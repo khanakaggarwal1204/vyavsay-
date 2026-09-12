@@ -80,6 +80,16 @@ auditable drafting flow during provider outages or rate limits.
 The structuring engine is drafting support only and never makes a final
 procurement decision.
 
+On submission, Template 1 runs an **automated pre-review**. Deterministic
+controls block incomplete fields, vague unmeasurable outcomes, invalid budgets,
+reversed or expired dates, missing KPI evidence, exposed identifiers or
+credentials, prompt-injection text and unsafe pilot duration. A server-side LLM
+then checks language quality, internal consistency and possible named-brand
+bias. Clean versions are routed to one-click authorised confirmation; warnings
+or provider outages go to manual review; blocking failures return to the author.
+Every report is bound to a SHA-256 content hash, and the author cannot approve
+their own challenge. AI never publishes, rejects or overrides a blocking rule.
+
 Open any challenge (Challenges → click a row) to see the other two:
 
 - **AI Startup Discovery** tab — eligibility first filters profiles using

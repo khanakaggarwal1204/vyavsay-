@@ -131,7 +131,7 @@ export function validateDraftForReview(fields) {
 }
 
 export function isPrivateChallenge(challenge) {
-  return ["Draft", "Under Review", "Changes Requested", "Approved"].includes(challenge?.status);
+  return ["Draft", "Under Review", "Ready for Confirmation", "Changes Requested", "Approved"].includes(challenge?.status);
 }
 
 export function challengeVisibleTo(challenge, user) {

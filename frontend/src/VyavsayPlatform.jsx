@@ -129,7 +129,7 @@ const tabular = { fontVariantNumeric: "tabular-nums" };
 /*  LIFECYCLE                                                              */
 /* ---------------------------------------------------------------------- */
 const LIFECYCLE = [
-  "Draft", "Draft Challenge", "Under Review", "Published", "Applications Open",
+  "Draft", "Draft Challenge", "Under Review", "Ready for Confirmation", "Published", "Applications Open",
   "Eligibility Screening", "Expert Evaluation", "Startup Shortlisted",
   "Pilot Design", "Contracting", "Pilot Active", "Milestone Review",
   "Payment Processing", "Independent Validation", "Scale-Up Review",
@@ -149,7 +149,7 @@ const PUBLIC_PATHWAY_STAGES = [
 ];
 
 const PUBLIC_PATHWAY_GROUPS = [
-  ["Draft", "Draft Challenge", "Under Review", "Published"],
+  ["Draft", "Draft Challenge", "Under Review", "Ready for Confirmation", "Published"],
   ["Applications Open"],
   ["Eligibility Screening"],
   ["Expert Evaluation"],
@@ -164,6 +164,7 @@ const STATUS_COLOR = {
   "Draft": ["#8A8D94", "#EDEDE9"],
   "Draft Challenge": ["#8A8D94", "#EDEDE9"],
   "Under Review": [C.brass, C.brassSoft],
+  "Ready for Confirmation": [C.teal, C.tealSoft],
   "Published": [C.teal, C.tealSoft],
   "Applications Open": [C.teal, C.tealSoft],
   "Eligibility Screening": [C.brass, C.brassSoft],
@@ -198,6 +199,31 @@ function StatusChip({ label, small }) {
     >
       {label}
     </span>
+  );
+}
+
+function AutomatedReviewCard({ report }) {
+  if (!report) return null;
+  const routeLabel = report.route === "changes_required" ? "Corrections required" : report.route === "ready_for_confirmation" ? "Ready for confirmation" : "Manual review required";
+  const tone = report.route === "changes_required" ? C.rust : report.route === "ready_for_confirmation" ? C.teal : C.brass;
+  const background = report.route === "changes_required" ? C.rustSoft : report.route === "ready_for_confirmation" ? C.tealSoft : C.brassSoft;
+  return (
+    <Card style={{ marginBottom: 16, border: `1px solid ${tone}66`, background }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+        <div><div style={{ fontWeight: 800 }}>Automated pre-review</div><div style={{ fontSize: 12, color: C.inkSoft, marginTop: 3 }}>{report.summary}</div></div>
+        <div style={{ textAlign: "right" }}><div style={{ ...serif, fontSize: 24, color: tone }}>{report.score}/100</div><div style={{ fontSize: 9.5, color: C.inkSoft }}>READINESS SCORE</div><div style={{ fontSize: 10.5, fontWeight: 700, color: tone }}>{routeLabel}</div></div>
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10, fontSize: 11.5 }}>
+        <span>{report.passedChecks}/{report.totalChecks} control groups passed</span><span>•</span><span>Risk: {report.riskLevel}</span><span>•</span><span>AI: {report.ai?.status === "completed" ? `${report.ai.provider}${report.ai.model ? ` · ${report.ai.model}` : ""}` : report.ai?.status === "skipped_sensitive_input" ? "skipped to protect sensitive input" : "unavailable — manually routed"}</span>
+      </div>
+      {report.findings?.length > 0 && <div style={{ marginTop: 12 }}>
+        {report.findings.map((item, index) => <div key={`${item.code}-${index}`} style={{ padding: "9px 0", borderTop: `1px solid ${C.lineStrong}`, fontSize: 12 }}>
+          <div style={{ fontWeight: 750, color: item.severity === "blocking" ? C.rust : C.ink }}>{item.severity === "blocking" ? "BLOCKING" : "WARNING"} · {item.code.replaceAll("_", " ")}</div>
+          <div style={{ marginTop: 3 }}>{item.message}</div>
+          <div style={{ color: C.inkSoft, marginTop: 3 }}><b>Fix:</b> {item.suggestion}</div>
+        </div>)}
+      </div>}
+    </Card>
   );
 }
 
@@ -1497,7 +1523,7 @@ function ChallengesList({ onOpen, onCreate }) {
 /*  CHALLENGE DETAIL                                                       */
 /* ---------------------------------------------------------------------- */
 function ChallengeDetail({ ch, onBack, role, onChanged, onEdit }) {
-  const [tab, setTab] = useState("overview");
+  const [tab, setTab] = useState("Overview");
   const [reviewFindings, setReviewFindings] = useState("");
   const [reviewDecision, setReviewDecision] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -1619,14 +1645,15 @@ function ChallengeDetail({ ch, onBack, role, onChanged, onEdit }) {
               </p>
               {ch.constraints && <><div style={{ fontWeight: 700, marginTop: 14, marginBottom: 8 }}>Constraints</div><p style={{ fontSize: 13, color: C.inkSoft, lineHeight: 1.6 }}>{ch.constraints}</p></>}
             </Card>
-            {ch.status === "Under Review" && role === "Platform Admin" && (
+            <AutomatedReviewCard report={ch.automatedReview} />
+            {["Under Review", "Ready for Confirmation"].includes(ch.status) && role === "Platform Admin" && (
               <Card style={{ marginBottom: 16, border: `1px solid ${C.brass}66` }}>
-                <div style={{ fontWeight: 700, marginBottom: 6 }}>Independent publication review</div>
-                <div style={{ fontSize: 12.5, color: C.inkSoft, marginBottom: 10 }}>Record specific findings. The backend prevents the challenge author from reviewing their own submission.</div>
-                <Field label="Review findings"><textarea style={{ ...inputStyle, height: 80 }} value={reviewFindings} onChange={(event) => setReviewFindings(event.target.value)} placeholder="Confirm the requirement, measurable outcome, KPI, budget and constraints, or explain required corrections." /></Field>
+                <div style={{ fontWeight: 700, marginBottom: 6 }}>{ch.status === "Ready for Confirmation" ? "Authorised publication confirmation" : "Independent publication review"}</div>
+                <div style={{ fontSize: 12.5, color: C.inkSoft, marginBottom: 10 }}>{ch.status === "Ready for Confirmation" ? "Automated checks passed. Confirm the exact submitted version; the backend still prevents self-approval." : "Review the automated warnings and record specific findings. The backend prevents the challenge author from reviewing their own submission."}</div>
+                {ch.status === "Under Review" && <Field label="Review findings"><textarea style={{ ...inputStyle, height: 80 }} value={reviewFindings} onChange={(event) => setReviewFindings(event.target.value)} placeholder="Confirm the requirement, measurable outcome, KPI, budget and constraints, or explain required corrections." /></Field>}
                 <div style={{ display: "flex", gap: 8 }}>
-                  <Btn variant="secondary" small onClick={() => reviewChallenge("changes_requested")} disabled={reviewDecision || reviewFindings.trim().length < 15}>Request corrections</Btn>
-                  <Btn variant="brass" small icon={CheckCircle2} onClick={() => reviewChallenge("approved")} disabled={reviewDecision || reviewFindings.trim().length < 15}>Approve reviewed version</Btn>
+                  {ch.status === "Under Review" && <Btn variant="secondary" small onClick={() => reviewChallenge("changes_requested")} disabled={reviewDecision || reviewFindings.trim().length < 15}>Request corrections</Btn>}
+                  <Btn variant="brass" small icon={CheckCircle2} onClick={() => reviewChallenge("approved")} disabled={reviewDecision || (ch.status === "Under Review" && reviewFindings.trim().length < 15)}>{ch.status === "Ready for Confirmation" ? "Confirm reviewed version" : "Approve reviewed version"}</Btn>
                 </div>
                 {publishError && <div style={{ color: C.rust, fontSize: 12, marginTop: 8 }}>{publishError}</div>}
               </Card>

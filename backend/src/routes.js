@@ -6,6 +6,7 @@ import { queueChallengeDiscoveryIndex, queueEmbeddingRefresh } from "./semanticD
 import { runEligibilityCheck } from "./eligibility.js";
 import { structureRequirement } from "./structuring.js";
 import { structureWithLlm } from "./aiStructuring.js";
+import { challengeContentHash, runAutomatedReview } from "./automatedReview.js";
 import {
   challengeVisibleTo,
   draftCompleteness,
@@ -426,6 +427,7 @@ router.patch("/challenge-drafts/:id", requireRole("Government Official", "Platfo
   }
   if (req.user.role === "Government Official" && req.user.profile?.department && fields.department !== req.user.profile.department)
     return res.status(403).json({ error: "Government officials can only edit challenges for their verified department." });
+  const priorReviewInvalidated = Boolean(challenge.review || challenge.automatedReview);
   Object.assign(challenge, fields, {
     title: fields.title || "Untitled challenge",
     dept: fields.department || req.user.profile?.department || "Unassigned Department",
@@ -433,14 +435,16 @@ router.patch("/challenge-drafts/:id", requireRole("Government Official", "Platfo
     draftingEngine: typeof req.body?.draftingEngine === "string" ? req.body.draftingEngine.slice(0, 120) : challenge.draftingEngine,
     draftingModel: typeof req.body?.draftingModel === "string" ? req.body.draftingModel.slice(0, 160) : challenge.draftingModel,
   });
+  challenge.review = null;
+  challenge.automatedReview = null;
   if (Array.isArray(req.body?.capabilities)) challenge.capabilities = req.body.capabilities.filter((item) => typeof item === "string").slice(0, 12);
   challenge.version += 1;
-  recordChallengeHistory(challenge, { actor: req.user, event: "draft_saved", details: { fields: draftPayload(challenge), completeness: draftCompleteness(fields).percent } });
+  recordChallengeHistory(challenge, { actor: req.user, event: "draft_saved", details: { fields: draftPayload(challenge), completeness: draftCompleteness(fields).percent, priorReviewInvalidated } });
   writeDB(db);
   res.json({ challenge, completeness: draftCompleteness(fields) });
 });
 
-router.post("/challenge-drafts/:id/submit", requireRole("Government Official", "Platform Admin"), (req, res) => {
+router.post("/challenge-drafts/:id/submit", requireRole("Government Official", "Platform Admin"), async (req, res, next) => {
   const db = readDB();
   const challenge = findChallenge(db, req.params.id);
   if (!requireDraftEditor(req, res, challenge) || !requireChallengeVersion(req, res, challenge)) return;
@@ -449,11 +453,28 @@ router.post("/challenge-drafts/:id/submit", requireRole("Government Official", "
   const fields = draftPayload(challenge);
   const validation = validateDraftForReview(fields);
   if (validation) return res.status(422).json(validation);
-  challenge.status = "Under Review";
-  challenge.version += 1;
-  recordChallengeHistory(challenge, { actor: req.user, event: "submitted_for_review", details: { fields, completeness: 100, previousFindings: challenge.review?.findings || null } });
-  writeDB(db);
-  res.json({ challenge });
+  try {
+    const previousFindings = challenge.review?.findings || challenge.automatedReview?.summary || null;
+    const automatedReview = await runAutomatedReview(fields);
+    challenge.automatedReview = automatedReview;
+    challenge.review = automatedReview.route === "changes_required" ? {
+      decision: "automated_changes_required",
+      findings: automatedReview.findings.filter((item) => item.severity === "blocking").map((item) => `${item.message} ${item.suggestion}`).join(" "),
+      reviewerId: "automated-review-engine",
+      reviewedAt: automatedReview.generatedAt,
+      reviewedVersion: challenge.version,
+      reviewedContentHash: automatedReview.contentHash,
+    } : null;
+    challenge.status = automatedReview.route === "changes_required"
+      ? "Changes Requested"
+      : automatedReview.route === "ready_for_confirmation" ? "Ready for Confirmation" : "Under Review";
+    challenge.version += 1;
+    recordChallengeHistory(challenge, { actor: req.user, event: "automated_review_completed", details: { fields, completeness: 100, previousFindings, automatedReview } });
+    writeDB(db);
+    res.json({ challenge, automatedReview });
+  } catch (error) {
+    next(error);
+  }
 });
 
 router.post("/challenge-drafts/:id/review", requireRole("Platform Admin"), (req, res) => {
@@ -461,16 +482,19 @@ router.post("/challenge-drafts/:id/review", requireRole("Platform Admin"), (req,
   const challenge = findChallenge(db, req.params.id);
   if (!challenge) return res.status(404).json({ error: "Challenge draft not found." });
   if (!requireChallengeVersion(req, res, challenge)) return;
-  if (challenge.status !== "Under Review") return res.status(409).json({ error: "Only a challenge under review can receive a decision." });
+  if (!["Under Review", "Ready for Confirmation"].includes(challenge.status)) return res.status(409).json({ error: "Only a challenge routed for confirmation or manual review can receive a decision." });
   const reviewerPersonId = req.user.profile?.employeeId || req.user.id;
   if (challenge.createdBy === req.user.id || challenge.createdByPersonId === reviewerPersonId)
     return res.status(403).json({ error: "The challenge author cannot review their own submission, including through another account." });
   const decision = req.body?.decision;
   if (!["approved", "changes_requested"].includes(decision)) return res.status(422).json({ error: "Choose approve or request changes." });
-  const findings = typeof req.body?.findings === "string" ? req.body.findings.trim() : "";
+  if (challenge.automatedReview?.contentHash && challenge.automatedReview.contentHash !== challengeContentHash(draftPayload(challenge)))
+    return res.status(409).json({ error: "The challenge changed after automated review. Run the review again." });
+  let findings = typeof req.body?.findings === "string" ? req.body.findings.trim() : "";
+  if (!findings && challenge.status === "Ready for Confirmation" && decision === "approved") findings = "Confirmed the automated review report and exact submitted version.";
   if (findings.length < 15 || findings.length > 3000) return res.status(422).json({ error: "Provide review findings between 15 and 3000 characters." });
   challenge.status = decision === "approved" ? "Approved" : "Changes Requested";
-  challenge.review = { decision, findings, reviewerId: req.user.id, reviewedAt: new Date().toISOString(), reviewedVersion: challenge.version };
+  challenge.review = { decision, findings, reviewerId: req.user.id, reviewedAt: new Date().toISOString(), reviewedVersion: challenge.version, reviewedContentHash: challengeContentHash(draftPayload(challenge)) };
   challenge.version += 1;
   recordChallengeHistory(challenge, { actor: req.user, event: decision, details: { findings, reviewedFields: draftPayload(challenge) } });
   writeDB(db);
@@ -488,6 +512,11 @@ router.post("/challenge-drafts/:id/publish", requireRole("Platform Admin"), (req
     return res.status(403).json({ error: "The independent reviewer who approved this version must publish it." });
   const validation = validateDraftForReview(draftPayload(challenge));
   if (validation) return res.status(422).json(validation);
+  const currentContentHash = challengeContentHash(draftPayload(challenge));
+  if (challenge.review.reviewedContentHash && challenge.review.reviewedContentHash !== currentContentHash)
+    return res.status(409).json({ error: "The approved content changed. Run automated review and confirmation again." });
+  if (challenge.automatedReview?.contentHash && challenge.automatedReview.contentHash !== currentContentHash)
+    return res.status(409).json({ error: "The automated review is stale. Run it again before publication." });
   challenge.status = "Published";
   challenge.publishedAt = new Date().toISOString();
   challenge.version += 1;

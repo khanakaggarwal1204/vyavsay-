@@ -39,9 +39,13 @@ These controls must return the same answer for the same record and cannot be del
 
 ## Review and publication workflow
 
-`Draft → Under Review → Changes Requested → Resubmitted → Approved → Published`
+Submission begins with a hybrid automated pre-review. Fixed rules check required fields, measurable outcomes, positive budget ranges, date order, pilot duration, KPI evidence, exposed credentials or identifiers, prompt-injection text and mandatory named-brand wording. A configured LLM then checks language quality, consistency and possible competitive bias. AI findings are warnings only; they cannot approve, reject or override a fixed rule.
 
-The department author can edit Draft and Changes Requested records. A Platform Admin who is a different user records findings and either requests corrections or approves the reviewed version. Only that approving reviewer can publish the exact approved version. Direct creation of an Applications Open challenge is disabled, closing the older publication bypass.
+`Draft → Automated Pre-Review → Changes Requested / Manual Review / Ready for Confirmation → Approved → Published`
+
+Blocking rule failures return the exact version for correction. Warnings or an unavailable or malformed AI response go to manual review. A clean report becomes Ready for Confirmation. A different authorised person must approve the exact content hash before publication. Editing a returned version invalidates its earlier report and approval.
+
+The department author can edit Draft and Changes Requested records. A Platform Admin who is a different user records findings for warnings, or confirms a clean automated report. Only that approving reviewer can publish the exact approved version. Direct creation of an Applications Open challenge is disabled, closing the older publication bypass.
 
 Draft, Under Review, Changes Requested, and Approved records remain private to the author and Platform Admin. Published records become visible to startups and are queued for startup-discovery indexing.
 
@@ -62,6 +66,7 @@ Risk remains explicitly provisional until the Risk Management Template is comple
 - Independent review, correction, resubmission, approval, and publication controls.
 - Self-review prevention and a closed direct-publication route.
 - Time-stamped field snapshots in challenge history.
+- Explainable automated review findings, safe AI-outage routing and content-hash binding.
 - Connection to the published challenge used by discovery and eligibility.
 
 ## Remaining production work
