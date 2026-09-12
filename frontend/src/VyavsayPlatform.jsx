@@ -1355,13 +1355,8 @@ export default function App() {
           <button className="vyavsay-mobile-menu" type="button" aria-label="Open navigation" onClick={() => setMobileNavOpen(true)} style={{ display: "none", placeItems: "center", width: 38, height: 38, padding: 0, border: `1px solid ${C.line}`, borderRadius: 6, background: "#fff", color: C.ink, flexShrink: 0 }}><Menu size={19} /></button>
           <div className="vyavsay-topbar-search" style={{ flex: 1, maxWidth: 420, position: "relative" }}>
             <Search size={15} style={{ position: "absolute", left: 10, top: 10 }} color={C.inkSoft} />
-<<<<<<< HEAD
             <input placeholder={t(language, "Search challenges, startups, departments…")}
-              style={{ ...inputStyle, paddingLeft: 32, background: "#F4FAFF", border: `1px solid ${C.line}`, borderRadius: 999 }} />
-=======
-            <input placeholder="Search challenges, startups, departments…"
               style={{ ...inputStyle, paddingLeft: 32, background: "#FFF9F0", border: `1px solid ${C.line}`, borderRadius: 999 }} />
->>>>>>> 5bc65e7 (Unify frontend theme and enhance dashboard)
           </div>
           <div className="vyavsay-topbar-spacer" style={{ flex: 1 }} />
           <LanguageSelector language={language} onChange={setLanguage} />
