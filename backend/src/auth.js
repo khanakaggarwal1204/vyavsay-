@@ -27,6 +27,10 @@ function isReusableDemoInvite(invite) {
   return invite?.role === "Platform Admin" && REUSABLE_DEMO_INVITES.has(invite.code);
 }
 
+function isReusableDemoCode(code, role) {
+  return role === "Platform Admin" && REUSABLE_DEMO_INVITES.has(code);
+}
+
 // Official government email domains recognised at registration. In a real
 // deployment this would be sourced from NIC/Digital India's domain registry;
 // kept as a plain allow-list here so it's easy to extend per state/dept.
@@ -112,15 +116,16 @@ export function verifyRegistration(role, fields, db) {
   if (INVITE_ONLY_ROLES.includes(role)) {
     const code = (fields.inviteCode || "").trim();
     if (!code) return { error: "A valid invite code is required to register for this role." };
-    const invite = (db.inviteCodes || []).find((i) => i.code === code && i.role === role && (!i.usedBy || isReusableDemoInvite(i)));
+    const invite = (db.inviteCodes || []).find((i) => i.code === code && i.role === role && (!i.usedBy || isReusableDemoInvite(i)))
+      || (isReusableDemoCode(code, role) ? { code, role, reusableDemo: true } : null);
     if (!invite) return { error: "That invite code is invalid, already used, or not issued for this role." };
     return {
       verificationStatus: "Verified",
-      verificationNote: isReusableDemoInvite(invite)
+      verificationNote: (isReusableDemoInvite(invite) || invite.reusableDemo)
         ? "Auto-verified: registered with the reusable presentation Platform Admin code."
         : `Auto-verified: registered with a valid ${role} invite code.`,
       profile: { organization: fields.organization || null, inviteCode: code },
-      consumesInvite: isReusableDemoInvite(invite) ? null : invite,
+      consumesInvite: (isReusableDemoInvite(invite) || invite.reusableDemo) ? null : invite,
     };
   }
 
