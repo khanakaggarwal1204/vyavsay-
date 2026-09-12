@@ -952,8 +952,8 @@ function Footer() {
 /*  AUTH GATE — sign in, or register with role-specific legitimacy checks. */
 /*  Startups: MCA-format CIN (+ optional DPIIT number for instant verify). */
 /*  Government officials: official email domain allow-list.               */
-/*  Expert Evaluator / Validation Agency / Platform Admin: admin-issued,   */
-/*  single-use invite code — these oversight roles aren't open self-signup.*/
+/*  Expert Evaluator / Validation Agency / Platform Admin: admin-issued     */
+/*  invite code — these oversight roles aren't open self-signup.            */
 /*  See backend/src/auth.js.                                               */
 /* ---------------------------------------------------------------------- */
 const INVITE_ONLY_ROLES = ["Expert Evaluator", "Validation Agency", "Platform Admin"];
