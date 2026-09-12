@@ -1706,7 +1706,7 @@ function StartupDiscoveryPanel({ ch, role }) {
   }
 
   if (loading) return <Card>Running AI discovery against the startup database…</Card>;
-  if (error) return <Card style={{ color: C.rust }}>Couldn't reach the discovery service: {error}. Is the backend running on port 4000?</Card>;
+  if (error) return <Card style={{ color: C.rust }}>Startup discovery cannot run yet: {error}</Card>;
 
   const matches = data.matches;
 
@@ -1848,7 +1848,7 @@ function EligibilityPanel({ ch, role }) {
   }
 
   if (loading) return <Card>Running auto-eligibility screening…</Card>;
-  if (error) return <Card style={{ color: C.rust }}>Couldn't reach the eligibility service: {error}. Is the backend running on port 4000?</Card>;
+  if (error) return <Card style={{ color: C.rust }}>Eligibility screening cannot load yet: {error}</Card>;
 
   const needsCert = apps.some((a) => a.results.some((r) => r.key === "cert"));
 
