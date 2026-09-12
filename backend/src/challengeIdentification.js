@@ -131,12 +131,12 @@ export function validateDraftForReview(fields) {
 }
 
 export function isPrivateChallenge(challenge) {
-  return ["Draft", "Under Review", "Ready for Confirmation", "Changes Requested", "Approved"].includes(challenge?.status);
+  return ["Draft", "Changes Requested"].includes(challenge?.status);
 }
 
 export function challengeVisibleTo(challenge, user) {
   if (!isPrivateChallenge(challenge)) return true;
-  return !!user && (user.role === "Platform Admin" || challenge.createdBy === user.id);
+  return !!user && challenge.createdBy === user.id;
 }
 
 export function recordChallengeHistory(challenge, { actor, event, details = {} }) {

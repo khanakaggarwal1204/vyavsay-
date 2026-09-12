@@ -8,28 +8,15 @@
 /*      "Pending Verification" until reviewed.                             */
 /*    - Government Official: official email domain allow-list — personal   */
 /*      email addresses are rejected outright.                             */
-/*    - Expert Evaluator / Validation Agency / Platform Admin: these are   */
-/*      oversight roles, so registration requires an admin-issued invite   */
+/*    - Expert Evaluator / Validation Agency: these oversight roles        */
+/*      require a pre-issued invite code rather than open self-signup.     */
 /*      code rather than being open self-signup.                            */
 /* ---------------------------------------------------------------------- */
 
 import { randomUUID, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 
-export const ROLES = ["Government Official", "Startup", "Expert Evaluator", "Validation Agency", "Platform Admin"];
-export const INVITE_ONLY_ROLES = ["Expert Evaluator", "Validation Agency", "Platform Admin"];
-
-// Presentation-only bootstrap access. This code is intentionally reusable so
-// the team can demonstrate the admin workspace from more than one device.
-// All dynamically issued invite codes remain single-use.
-const REUSABLE_DEMO_INVITES = new Set(["ADMIN-DEMO1"]);
-
-function isReusableDemoInvite(invite) {
-  return invite?.role === "Platform Admin" && REUSABLE_DEMO_INVITES.has(invite.code);
-}
-
-function isReusableDemoCode(code, role) {
-  return role === "Platform Admin" && REUSABLE_DEMO_INVITES.has(code);
-}
+export const ROLES = ["Government Official", "Startup", "Expert Evaluator", "Validation Agency"];
+export const INVITE_ONLY_ROLES = ["Expert Evaluator", "Validation Agency"];
 
 // Official government email domains recognised at registration. In a real
 // deployment this would be sourced from NIC/Digital India's domain registry;
@@ -118,16 +105,13 @@ export function verifyRegistration(role, fields, db) {
   if (INVITE_ONLY_ROLES.includes(role)) {
     const code = (fields.inviteCode || "").trim();
     if (!code) return { error: "A valid invite code is required to register for this role." };
-    const invite = (db.inviteCodes || []).find((i) => i.code === code && i.role === role && (!i.usedBy || isReusableDemoInvite(i)))
-      || (isReusableDemoCode(code, role) ? { code, role, reusableDemo: true } : null);
+    const invite = (db.inviteCodes || []).find((i) => i.code === code && i.role === role && !i.usedBy);
     if (!invite) return { error: "That invite code is invalid, already used, or not issued for this role." };
     return {
       verificationStatus: "Verified",
-      verificationNote: (isReusableDemoInvite(invite) || invite.reusableDemo)
-        ? "Auto-verified: registered with the reusable presentation Platform Admin code."
-        : `Auto-verified: registered with a valid ${role} invite code.`,
+      verificationNote: `Auto-verified: registered with a valid ${role} invite code.`,
       profile: { organization: fields.organization || null, inviteCode: code },
-      consumesInvite: (isReusableDemoInvite(invite) || invite.reusableDemo) ? null : invite,
+      consumesInvite: invite,
     };
   }
 

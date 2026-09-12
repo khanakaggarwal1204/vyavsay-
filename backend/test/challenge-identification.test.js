@@ -8,6 +8,7 @@ import {
 } from "../src/challengeIdentification.js";
 import { structureRequirement } from "../src/structuring.js";
 import { validateStructuredSuggestion } from "../src/aiStructuring.js";
+import { structurePdfChallenge } from "../src/pdfChallengeImport.js";
 import {
   challengeContentHash,
   runAutomatedReview,
@@ -56,12 +57,12 @@ test("draft completeness is deterministic and review blocks incomplete or unmeas
   assert.equal(validateDraftForReview(readyDraft), null);
 });
 
-test("private challenge records are visible only to their author or a Platform Admin", () => {
+test("private challenge records are visible only to their department author", () => {
   const challenge = { status: "Draft", createdBy: "gov-1" };
   assert.equal(challengeVisibleTo(challenge, null), false);
   assert.equal(challengeVisibleTo(challenge, { id: "gov-2", role: "Government Official" }), false);
   assert.equal(challengeVisibleTo(challenge, { id: "gov-1", role: "Government Official" }), true);
-  assert.equal(challengeVisibleTo(challenge, { id: "admin-1", role: "Platform Admin" }), true);
+  assert.equal(challengeVisibleTo(challenge, { id: "other-1", role: "Expert Evaluator" }), false);
   assert.equal(challengeVisibleTo({ status: "Published" }, null), true);
 });
 
@@ -81,6 +82,17 @@ test("LLM structuring output must contain complete, measurable JSON", () => {
     expectedOutcome: "Improve soon.",
     constraints: "Use existing systems.",
   }), null);
+});
+
+test("PDF challenge import rejects non-PDF and oversized input before parsing", async () => {
+  await assert.rejects(
+    structurePdfChallenge({ bytes: Buffer.from("not a PDF"), fileName: "notes.txt" }),
+    /valid PDF/i,
+  );
+  await assert.rejects(
+    structurePdfChallenge({ bytes: Buffer.concat([Buffer.from("%PDF-"), Buffer.alloc(6 * 1024 * 1024)]), fileName: "large.pdf" }),
+    /6 MB/i,
+  );
 });
 
 test("automated review accepts a complete challenge only after valid AI screening", async () => {

@@ -1,11 +1,12 @@
-import { Router } from "express";
+import express, { Router } from "express";
 import { randomUUID } from "node:crypto";
-import { readDB, writeDB, resetDB } from "./db.js";
+import { readDB, writeDB } from "./db.js";
 import { matchStartupsForChallenge } from "./matching.js";
 import { queueChallengeDiscoveryIndex, queueEmbeddingRefresh } from "./semanticDiscovery.js";
 import { runEligibilityCheck } from "./eligibility.js";
 import { structureRequirement } from "./structuring.js";
 import { structureWithLlm } from "./aiStructuring.js";
+import { structurePdfChallenge } from "./pdfChallengeImport.js";
 import { challengeContentHash, runAutomatedReview } from "./automatedReview.js";
 import {
   challengeVisibleTo,
@@ -46,7 +47,8 @@ function attachUser(req, _res, next) {
   const token = readSessionToken(req);
   const db = readDB();
   const session = token && findSession(db, token);
-  req.user = session ? db.users?.find((u) => u.id === session.userId) : null;
+  const user = session ? db.users?.find((u) => u.id === session.userId) : null;
+  req.user = user && ROLES.includes(user.role) ? user : null;
   next();
 }
 router.use(attachUser);
@@ -127,7 +129,7 @@ function normaliseStartupProfile(payload = {}, existing = {}) {
 }
 
 function canEditStartupProfile(user, startup) {
-  return user?.role === "Platform Admin" || (user?.role === "Startup" && startup.ownerUserId === user.id);
+  return user?.role === "Startup" && startup.ownerUserId === user.id;
 }
 
 /** Attach the computed eligibility verdict to a raw application record. */
@@ -194,16 +196,6 @@ function decoratePilotDesign(pd, db) {
 
 router.get("/health", (_req, res) => res.json({ ok: true }));
 
-// Presentation data is visible only to Platform Admins. Startup profiles are
-// also available through the regular marketplace endpoint.
-router.get("/admin/mock-data", requireRole("Platform Admin"), (_req, res) => {
-  const db = readDB();
-  res.json({
-    startups: (db.startups || []).filter((startup) => startup.mock).map(publicStartupProfile),
-    governmentOfficials: db.mockGovernmentOfficials || [],
-  });
-});
-
 /* ------------------------------- Startups ------------------------------ */
 router.get("/startups", (req, res) => {
   const db = readDB();
@@ -266,7 +258,7 @@ router.post("/startups", requireRole("Startup"), (req, res) => {
   res.status(201).json({ startup: publicStartupProfile(startup), semanticIndex: "refreshing" });
 });
 
-router.patch("/startups/:id", requireRole("Startup", "Platform Admin"), (req, res) => {
+router.patch("/startups/:id", requireRole("Startup"), (req, res) => {
   const db = readDB();
   const startup = findStartup(db, req.params.id);
   if (!startup) return res.status(404).json({ error: "Startup profile not found." });
@@ -301,7 +293,7 @@ router.get("/challenges/:id", (req, res) => {
 // Turns a department's free-form problem description into a standard,
 // structured requirement statement instead of a free-form request. Stateless
 // — call as many times as the department edits their draft.
-router.post("/requirements/structure", requireRole("Government Official", "Platform Admin"), async (req, res, next) => {
+router.post("/requirements/structure", requireRole("Government Official"), async (req, res, next) => {
   let fields;
   try {
     fields = normaliseChallengeDraft(req.body || {});
@@ -331,6 +323,31 @@ router.post("/requirements/structure", requireRole("Government Official", "Platf
     writeDB(db);
     res.json({ ...result, reviewRequired: true, engine, llmUsed: Boolean(generated) });
   } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/requirements/structure-pdf", requireRole("Government Official"), express.raw({ type: "application/pdf", limit: "6mb" }), async (req, res, next) => {
+  try {
+    const result = await structurePdfChallenge({
+      bytes: req.body,
+      fileName: req.get("x-document-name") || "challenge-document.pdf",
+    });
+    const db = readDB();
+    db.aiStructuringLogs = db.aiStructuringLogs || [];
+    db.aiStructuringLogs.push({
+      id: `structure_pdf_${randomUUID()}`,
+      userId: req.user.id,
+      engine: result.engine,
+      model: result.model,
+      input: { sourceDocument: result.sourceDocument },
+      output: { ...result, sourceDocument: result.sourceDocument },
+      createdAt: new Date().toISOString(),
+    });
+    writeDB(db);
+    res.json({ ...result, reviewRequired: true });
+  } catch (error) {
+    if (/PDF|readable text|6 MB/i.test(error.message)) return res.status(422).json({ error: error.message });
     next(error);
   }
 });
@@ -365,13 +382,22 @@ function draftPayload(challenge) {
   };
 }
 
+function sourceDocumentMetadata(value) {
+  if (!value || typeof value !== "object") return null;
+  const name = typeof value.name === "string" ? value.name.trim().replace(/[\\/\0]/g, "_").slice(0, 180) : "";
+  const textHash = typeof value.textHash === "string" && /^[a-f0-9]{64}$/i.test(value.textHash) ? value.textHash : "";
+  const bytes = Number(value.bytes);
+  if (!name || !textHash || !Number.isSafeInteger(bytes) || bytes < 1 || bytes > 6 * 1024 * 1024) return null;
+  return { name, textHash, bytes, pages: Number.isSafeInteger(Number(value.pages)) ? Number(value.pages) : null, extractedAt: new Date().toISOString() };
+}
+
 function requireDraftEditor(req, res, challenge) {
   if (!challenge) {
     res.status(404).json({ error: "Challenge draft not found." });
     return false;
   }
-  if (req.user.role !== "Platform Admin" && challenge.createdBy !== req.user.id) {
-    res.status(403).json({ error: "Only the draft author or a Platform Admin can access this draft." });
+  if (challenge.createdBy !== req.user.id) {
+    res.status(403).json({ error: "Only the department official who created this draft can access it." });
     return false;
   }
   return true;
@@ -387,7 +413,7 @@ function requireChallengeVersion(req, res, challenge) {
 
 // A draft is private from the first save. Each accepted save increments the
 // version, so delayed autosaves cannot silently overwrite newer content.
-router.post("/challenge-drafts", requireRole("Government Official", "Platform Admin"), (req, res) => {
+router.post("/challenge-drafts", requireRole("Government Official"), (req, res) => {
   let fields;
   try {
     fields = normaliseChallengeDraft(req.body || {});
@@ -409,6 +435,7 @@ router.post("/challenge-drafts", requireRole("Government Official", "Platform Ad
     capabilities: Array.isArray(req.body?.capabilities) ? req.body.capabilities.filter((item) => typeof item === "string").slice(0, 12) : [],
     draftingEngine: typeof req.body?.draftingEngine === "string" ? req.body.draftingEngine.slice(0, 120) : null,
     draftingModel: typeof req.body?.draftingModel === "string" ? req.body.draftingModel.slice(0, 160) : null,
+    sourceDocument: sourceDocumentMetadata(req.body?.sourceDocument),
     createdBy: req.user.id,
     createdByPersonId: req.user.profile?.employeeId || req.user.id,
     createdAt: new Date().toISOString(),
@@ -423,7 +450,7 @@ router.post("/challenge-drafts", requireRole("Government Official", "Platform Ad
   res.status(201).json({ challenge, completeness: draftCompleteness(draftPayload(challenge)) });
 });
 
-router.patch("/challenge-drafts/:id", requireRole("Government Official", "Platform Admin"), (req, res) => {
+router.patch("/challenge-drafts/:id", requireRole("Government Official"), (req, res) => {
   const db = readDB();
   const challenge = findChallenge(db, req.params.id);
   if (!requireDraftEditor(req, res, challenge) || !requireChallengeVersion(req, res, challenge)) return;
@@ -444,6 +471,7 @@ router.patch("/challenge-drafts/:id", requireRole("Government Official", "Platfo
     deadline: fields.submissionDeadline || "Draft",
     draftingEngine: typeof req.body?.draftingEngine === "string" ? req.body.draftingEngine.slice(0, 120) : challenge.draftingEngine,
     draftingModel: typeof req.body?.draftingModel === "string" ? req.body.draftingModel.slice(0, 160) : challenge.draftingModel,
+    sourceDocument: sourceDocumentMetadata(req.body?.sourceDocument) || challenge.sourceDocument || null,
   });
   challenge.review = null;
   challenge.automatedReview = null;
@@ -454,12 +482,12 @@ router.patch("/challenge-drafts/:id", requireRole("Government Official", "Platfo
   res.json({ challenge, completeness: draftCompleteness(fields) });
 });
 
-router.post("/challenge-drafts/:id/submit", requireRole("Government Official", "Platform Admin"), async (req, res, next) => {
+async function publishDepartmentDraft(req, res, next) {
   const db = readDB();
   const challenge = findChallenge(db, req.params.id);
   if (!requireDraftEditor(req, res, challenge) || !requireChallengeVersion(req, res, challenge)) return;
   if (!["Draft", "Changes Requested"].includes(challenge.status))
-    return res.status(409).json({ error: "This challenge is not editable or has already been submitted." });
+    return res.status(409).json({ error: "This challenge has already been published or is not editable." });
   const fields = draftPayload(challenge);
   const validation = validateDraftForReview(fields);
   if (validation) return res.status(422).json(validation);
@@ -475,77 +503,36 @@ router.post("/challenge-drafts/:id/submit", requireRole("Government Official", "
       reviewedVersion: challenge.version,
       reviewedContentHash: automatedReview.contentHash,
     } : null;
-    challenge.status = automatedReview.route === "changes_required"
-      ? "Changes Requested"
-      : automatedReview.route === "ready_for_confirmation" ? "Ready for Confirmation" : "Under Review";
+    challenge.status = automatedReview.route === "changes_required" ? "Changes Requested" : "Published";
+    if (challenge.status === "Published") challenge.publishedAt = new Date().toISOString();
     challenge.version += 1;
-    recordChallengeHistory(challenge, { actor: req.user, event: "automated_review_completed", details: { fields, completeness: 100, previousFindings, automatedReview } });
+    recordChallengeHistory(challenge, { actor: req.user, event: challenge.status === "Published" ? "published_by_department_after_automated_checks" : "automated_changes_requested", details: { fields, completeness: 100, previousFindings, automatedReview } });
     writeDB(db);
+    if (challenge.status === "Published") queueEmbeddingRefresh("challenge", challenge.id);
     res.json({ challenge, automatedReview });
   } catch (error) {
     next(error);
   }
+}
+
+// The department author publishes their own complete challenge. Automated
+// checks may request corrections, but there is no separate platform-admin gate.
+router.post("/challenge-drafts/:id/publish", requireRole("Government Official"), publishDepartmentDraft);
+// Kept as a backwards-compatible alias for earlier frontend builds.
+router.post("/challenge-drafts/:id/submit", requireRole("Government Official"), publishDepartmentDraft);
+
+router.post("/challenge-drafts/:id/review", (_req, res) => {
+  res.status(410).json({ error: "Independent platform-admin review has been removed. The department author publishes after automated checks." });
 });
 
-router.post("/challenge-drafts/:id/review", requireRole("Platform Admin"), (req, res) => {
-  const db = readDB();
-  const challenge = findChallenge(db, req.params.id);
-  if (!challenge) return res.status(404).json({ error: "Challenge draft not found." });
-  if (!requireChallengeVersion(req, res, challenge)) return;
-  if (!["Under Review", "Ready for Confirmation"].includes(challenge.status)) return res.status(409).json({ error: "Only a challenge routed for confirmation or manual review can receive a decision." });
-  const reviewerPersonId = req.user.profile?.employeeId || req.user.id;
-  if (challenge.createdBy === req.user.id || challenge.createdByPersonId === reviewerPersonId)
-    return res.status(403).json({ error: "The challenge author cannot review their own submission, including through another account." });
-  const decision = req.body?.decision;
-  if (!["approved", "changes_requested"].includes(decision)) return res.status(422).json({ error: "Choose approve or request changes." });
-  if (challenge.automatedReview?.contentHash && challenge.automatedReview.contentHash !== challengeContentHash(draftPayload(challenge)))
-    return res.status(409).json({ error: "The challenge changed after automated review. Run the review again." });
-  let findings = typeof req.body?.findings === "string" ? req.body.findings.trim() : "";
-  if (!findings && challenge.status === "Ready for Confirmation" && decision === "approved") findings = "Confirmed the automated review report and exact submitted version.";
-  if (findings.length < 15 || findings.length > 3000) return res.status(422).json({ error: "Provide review findings between 15 and 3000 characters." });
-  challenge.status = decision === "approved" ? "Approved" : "Changes Requested";
-  challenge.review = { decision, findings, reviewerId: req.user.id, reviewedAt: new Date().toISOString(), reviewedVersion: challenge.version, reviewedContentHash: challengeContentHash(draftPayload(challenge)) };
-  challenge.version += 1;
-  recordChallengeHistory(challenge, { actor: req.user, event: decision, details: { findings, reviewedFields: draftPayload(challenge) } });
-  writeDB(db);
-  res.json({ challenge });
-});
-
-router.post("/challenge-drafts/:id/publish", requireRole("Platform Admin"), (req, res) => {
-  const db = readDB();
-  const challenge = findChallenge(db, req.params.id);
-  if (!challenge) return res.status(404).json({ error: "Challenge draft not found." });
-  if (!requireChallengeVersion(req, res, challenge)) return;
-  if (challenge.status !== "Approved" || challenge.review?.decision !== "approved")
-    return res.status(409).json({ error: "Only an independently approved challenge can be published." });
-  if (challenge.createdBy === req.user.id || challenge.review.reviewerId !== req.user.id)
-    return res.status(403).json({ error: "The independent reviewer who approved this version must publish it." });
-  const validation = validateDraftForReview(draftPayload(challenge));
-  if (validation) return res.status(422).json(validation);
-  const currentContentHash = challengeContentHash(draftPayload(challenge));
-  if (challenge.review.reviewedContentHash && challenge.review.reviewedContentHash !== currentContentHash)
-    return res.status(409).json({ error: "The approved content changed. Run automated review and confirmation again." });
-  if (challenge.automatedReview?.contentHash && challenge.automatedReview.contentHash !== currentContentHash)
-    return res.status(409).json({ error: "The automated review is stale. Run it again before publication." });
-  challenge.status = "Published";
-  challenge.publishedAt = new Date().toISOString();
-  challenge.version += 1;
-  recordChallengeHistory(challenge, { actor: req.user, event: "published_after_independent_review", details: { approvedReview: challenge.review } });
-  writeDB(db);
-  queueEmbeddingRefresh("challenge", challenge.id);
-  res.json({ challenge });
-});
-
-// Legacy direct publication is closed. All new challenges must pass through
-// the versioned draft, independent review, and publication workflow above.
-router.post("/challenges", requireRole("Government Official", "Platform Admin"), (_req, res) => {
-  res.status(410).json({ error: "Direct challenge creation is disabled. Create a challenge draft and complete independent review." });
+router.post("/challenges", requireRole("Government Official"), (_req, res) => {
+  res.status(410).json({ error: "Create and publish a versioned challenge draft instead." });
 });
 
 /* --------------------- Feature 1: AI Startup Discovery ------------------ */
 // Auto-shortlists startups from the database against a challenge's
 // sector/theme and requirements, instead of a department searching manually.
-router.get("/challenges/:id/discovery", requireRole("Government Official", "Platform Admin"), (req, res) => {
+router.get("/challenges/:id/discovery", requireRole("Government Official"), (req, res) => {
   const db = readDB();
   const challenge = findChallenge(db, req.params.id);
   if (!challenge) return res.status(404).json({ error: "Challenge not found" });
@@ -568,7 +555,7 @@ router.get("/challenges/:id/discovery", requireRole("Government Official", "Plat
   });
 });
 
-router.post("/challenges/:id/discovery/reindex", requireRole("Government Official", "Platform Admin"), (req, res) => {
+router.post("/challenges/:id/discovery/reindex", requireRole("Government Official"), (req, res) => {
   const db = readDB();
   const challenge = findChallenge(db, req.params.id);
   if (!challenge) return res.status(404).json({ error: "Challenge not found" });
@@ -577,7 +564,7 @@ router.post("/challenges/:id/discovery/reindex", requireRole("Government Officia
   res.json({ ok: true, scheduled: (db.startups || []).length + 1 });
 });
 
-router.post("/challenges/:id/invitations", requireRole("Government Official", "Platform Admin"), (req, res) => {
+router.post("/challenges/:id/invitations", requireRole("Government Official"), (req, res) => {
   const db = readDB();
   const challenge = findChallenge(db, req.params.id);
   if (!challenge) return res.status(404).json({ error: "Challenge not found" });
@@ -615,7 +602,7 @@ router.get("/startup-invitations", requireRole("Startup"), (req, res) => {
 
 /* --------------------- Feature 2: Auto-Eligibility Screening ------------ */
 // Lists applications for a challenge, each with a live rule-based verdict.
-router.get("/challenges/:id/applications", requireRole("Government Official", "Platform Admin", "Expert Evaluator", "Startup"), (req, res) => {
+router.get("/challenges/:id/applications", requireRole("Government Official", "Expert Evaluator", "Startup"), (req, res) => {
   const db = readDB();
   const challenge = findChallenge(db, req.params.id);
   if (!challenge) return res.status(404).json({ error: "Challenge not found" });
@@ -658,7 +645,7 @@ router.post("/challenges/:id/applications", requireRole("Startup"), (req, res) =
   res.status(201).json(decorateApplication(application, db));
 });
 
-router.post("/applications/:id/rescreen", requireRole("Startup", "Government Official", "Platform Admin"), (req, res) => {
+router.post("/applications/:id/rescreen", requireRole("Startup", "Government Official"), (req, res) => {
   const db = readDB();
   const application = (db.applications || []).find((record) => record.id === req.params.id);
   if (!application) return res.status(404).json({ error: "Application not found" });
@@ -716,7 +703,7 @@ router.get("/challenges/:id/evaluations", (req, res) => {
 // An evaluator submits scores (0–10) for every rubric category against a
 // startup. The weighted total and startup ranking are always derived from
 // this same rubric, so every evaluator's scores are directly comparable.
-router.post("/challenges/:id/evaluations", requireRole("Expert Evaluator", "Platform Admin"), (req, res) => {
+router.post("/challenges/:id/evaluations", requireRole("Expert Evaluator"), (req, res) => {
   const db = readDB();
   const challenge = findChallenge(db, req.params.id);
   if (!challenge) return res.status(404).json({ error: "Challenge not found" });
@@ -787,7 +774,7 @@ router.get("/challenges/:id/pilot", (req, res) => {
 
 // Creates a pilot with its KPI targets locked in for good — baseline and
 // target are only ever set here, at pilot start.
-router.post("/pilots", requireRole("Government Official", "Platform Admin"), (req, res) => {
+router.post("/pilots", requireRole("Government Official"), (req, res) => {
   const db = readDB();
   const { challengeId, startupId, name, kpis } = req.body || {};
 
@@ -822,7 +809,7 @@ router.post("/pilots", requireRole("Government Official", "Platform Admin"), (re
 // Records a new field reading for one KPI. This is the ONLY thing that can
 // ever change after a pilot starts — the locked baseline/target are
 // untouched, so the achievement % is always computed fresh, automatically.
-router.patch("/pilots/:id/kpis/:key", requireRole("Government Official", "Validation Agency", "Platform Admin"), (req, res) => {
+router.patch("/pilots/:id/kpis/:key", requireRole("Government Official", "Validation Agency"), (req, res) => {
   const db = readDB();
   const pilot = findPilot(db, req.params.id);
   if (!pilot) return res.status(404).json({ error: "Pilot not found" });
@@ -856,7 +843,7 @@ router.get("/challenges/:id/contracts", (req, res) => {
   res.json({ challengeId: challenge.id, contracts });
 });
 
-router.post("/challenges/:id/contracts", requireRole("Government Official", "Platform Admin"), (req, res) => {
+router.post("/challenges/:id/contracts", requireRole("Government Official"), (req, res) => {
   const db = readDB();
   const challenge = findChallenge(db, req.params.id);
   if (!challenge) return res.status(404).json({ error: "Challenge not found" });
@@ -903,7 +890,7 @@ router.get("/challenges/:id/pilot-design", (req, res) => {
   res.json({ challengeId: challenge.id, pilotDesign: pd ? decoratePilotDesign(pd, db) : null });
 });
 
-router.post("/challenges/:id/pilot-design", requireRole("Government Official", "Platform Admin"), (req, res) => {
+router.post("/challenges/:id/pilot-design", requireRole("Government Official"), (req, res) => {
   const db = readDB();
   const challenge = findChallenge(db, req.params.id);
   if (!challenge) return res.status(404).json({ error: "Challenge not found" });
@@ -927,7 +914,7 @@ router.post("/challenges/:id/pilot-design", requireRole("Government Official", "
 
 // Mark the current active phase as passed and unlock the next one — the
 // only way a pilot can progress toward a live rollout.
-router.post("/pilot-design/:id/advance", requireRole("Government Official", "Validation Agency", "Platform Admin"), (req, res) => {
+router.post("/pilot-design/:id/advance", requireRole("Government Official", "Validation Agency"), (req, res) => {
   const db = readDB();
   const pd = (db.pilotDesigns || []).find((p) => p.id === req.params.id);
   if (!pd) return res.status(404).json({ error: "Pilot design not found" });
@@ -1018,7 +1005,7 @@ router.post("/auth/login", (req, res) => {
   if (lockoutError) return res.status(429).json({ error: lockoutError });
 
   const user = (db.users || []).find((u) => u.email.toLowerCase() === email.toLowerCase());
-  const ok = user && verifyPassword(password, user.passwordHash);
+  const ok = user && ROLES.includes(user.role) && verifyPassword(password, user.passwordHash);
 
   db.authAudit = db.authAudit || [];
   if (!ok) {
@@ -1054,34 +1041,18 @@ router.post("/auth/logout", (req, res) => {
 
 router.get("/auth/me", requireAuth, (req, res) => res.json({ user: publicUser(req.user) }));
 
-// Platform Admin only: issue a single-use invite code for one of the
-// oversight roles (Expert Evaluator, Validation Agency, Platform Admin).
-router.post("/auth/invites", requireRole("Platform Admin"), (req, res) => {
-  const db = readDB();
-  const { role } = req.body || {};
-  if (!["Expert Evaluator", "Validation Agency", "Platform Admin"].includes(role)) {
-    return res.status(400).json({ error: "role must be one of: Expert Evaluator, Validation Agency, Platform Admin" });
-  }
-  const code = randomUUID().split("-")[0].toUpperCase();
-  db.inviteCodes = db.inviteCodes || [];
-  db.inviteCodes.push({ code, role, issuedBy: req.user.id, issuedAt: new Date().toISOString(), usedBy: null });
-  writeDB(db);
-  res.status(201).json({ code, role });
-});
-
 /* ------------------------------ Dashboard -------------------------------- */
 // GET /api/dashboard/summary — replaces the old hard-coded per-role numbers
 // and the shared static challenge list. Everything here is computed live
 // from readDB() on every request and scoped to the signed-in user, so:
 //   - a Startup's own registration/application/draft shows up the moment
 //     it's saved, on their own dashboard AND on the dashboards below that
-//     are entitled to see it (department official, evaluator, admin);
+//     are entitled to see it (department official or evaluator);
 //   - an Expert Evaluator only ever sees their own completed evaluations
 //     and the pool of applications actually waiting on a score from them
 //     — never another evaluator's queue, never another role's data;
 //   - a Government Official only sees their own department's challenges
 //     and their own drafts, not every department's pipeline;
-//   - Platform Admin sees real platform-wide totals, not a canned number.
 function buildDashboardSummary(db, user) {
   const startups = db.startups || [];
   const challenges = db.challenges || [];
@@ -1201,8 +1172,8 @@ function buildDashboardSummary(db, user) {
     };
   }
 
-  // Platform Admin — real platform-wide totals; the only role with visibility
-  // into every department's pipeline (matches NAV_BY_ROLE on the frontend).
+  // Unsupported roles receive no dashboard data. Platform Admin is not a
+  // login role in Vyavsay and legacy sessions are rejected by attachUser.
   const usersByRole = {};
   for (const u of db.users || []) usersByRole[u.role] = (usersByRole[u.role] || 0) + 1;
   const underReview = challenges.filter((c) => c.status === "Under Review");
@@ -1227,23 +1198,6 @@ function buildDashboardSummary(db, user) {
 router.get("/dashboard/summary", requireAuth, (req, res) => {
   const db = readDB();
   res.json(buildDashboardSummary(db, req.user));
-});
-
-/* --------------------------------- Admin -------------------------------- */
-// Resets the demo data store back to its seed state.
-router.post("/admin/reset", requireRole("Platform Admin"), (_req, res) => {
-  const db = resetDB();
-  res.json({
-    ok: true,
-    startups: db.startups.length,
-    challenges: db.challenges.length,
-    applications: db.applications.length,
-    evaluations: (db.evaluations || []).length,
-    pilots: (db.pilots || []).length,
-    contracts: (db.contracts || []).length,
-    pilotDesigns: (db.pilotDesigns || []).length,
-    users: (db.users || []).length,
-  });
 });
 
 export default router;

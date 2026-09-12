@@ -25,6 +25,22 @@ async function request(path, options) {
   return body;
 }
 
+async function uploadPdf(path, file) {
+  const res = await fetch(`/api${path}`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/pdf", "X-Document-Name": file.name },
+    body: file,
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) {
+    const error = new Error(body?.error || `Upload failed (${res.status})`);
+    error.status = res.status;
+    throw error;
+  }
+  return body;
+}
+
 export const api = {
   queryAssistant: (payload) => request("/assistant/query", { method: "POST", body: JSON.stringify(payload) }),
   getAssistantSession: (sessionId) => request(`/assistant/sessions/${encodeURIComponent(sessionId)}`),
@@ -32,10 +48,10 @@ export const api = {
   getChallenge: (id) => request(`/challenges/${id}`),
   createChallenge: (payload) => request("/challenges", { method: "POST", body: JSON.stringify(payload) }),
   structureRequirement: (fields) => request("/requirements/structure", { method: "POST", body: JSON.stringify(fields) }),
+  structurePdfRequirement: (file) => uploadPdf("/requirements/structure-pdf", file),
   createChallengeDraft: (payload) => request("/challenge-drafts", { method: "POST", body: JSON.stringify(payload) }),
   saveChallengeDraft: (id, payload, expectedVersion) => request(`/challenge-drafts/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ ...payload, expectedVersion }) }),
   submitChallengeDraft: (id, expectedVersion) => request(`/challenge-drafts/${encodeURIComponent(id)}/submit`, { method: "POST", body: JSON.stringify({ expectedVersion }) }),
-  reviewChallengeDraft: (id, expectedVersion, decision, findings) => request(`/challenge-drafts/${encodeURIComponent(id)}/review`, { method: "POST", body: JSON.stringify({ expectedVersion, decision, findings }) }),
   publishChallengeDraft: (id, expectedVersion) => request(`/challenge-drafts/${encodeURIComponent(id)}/publish`, { method: "POST", body: JSON.stringify({ expectedVersion }) }),
   getStartups: () => request("/startups"),
   getMyStartup: () => request("/startups/me"),
@@ -101,10 +117,9 @@ export const api = {
   advancePilotPhase: (pilotDesignId) => request(`/pilot-design/${pilotDesignId}/advance`, { method: "POST" }),
 
   // Authentication: registration is verified per role (CIN + DPIIT for
-  // startups, official email domain for government officials, admin-issued
-  // invite codes for Expert Evaluator / Validation Agency / Platform Admin).
+  // startups, official email domain for government officials, pre-issued
+  // invite codes for Expert Evaluator / Validation Agency).
   getRoles: () => request("/auth/roles"),
-  getMockData: () => request("/admin/mock-data"),
   // rememberMe defaults to true server-side when omitted, but we always send
   // it explicitly here so the checkbox state is unambiguous.
   register: (payload) => request("/auth/register", { method: "POST", body: JSON.stringify(payload) }),
