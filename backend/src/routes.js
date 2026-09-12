@@ -94,6 +94,10 @@ function normaliseStartupProfile(payload = {}, existing = {}) {
   if (!/^TRL [1-9]$/.test(trl)) throw new Error("Technology readiness level must be in the form TRL 1 through TRL 9.");
   const pilots = payload.pilots ?? existing.pilots ?? 0;
   if (!Number.isInteger(Number(pilots)) || Number(pilots) < 0 || Number(pilots) > 999) throw new Error("Past government pilots must be a whole number from 0 to 999.");
+  const yearsActive = payload.yearsActive ?? existing.yearsActive ?? 0;
+  if (!Number.isInteger(Number(yearsActive)) || Number(yearsActive) < 0 || Number(yearsActive) > 100) throw new Error("Years in operation must be a whole number from 0 to 100.");
+  const certifications = payload.certifications ?? existing.certifications ?? [];
+  if (!Array.isArray(certifications) || certifications.length > 12 || certifications.some((certification) => typeof certification !== "string" || !certification.trim() || certification.trim().length > 160)) throw new Error("Provide up to 12 certification names.");
 
   return {
     name: cleanStartupText(payload.name ?? existing.name, "Startup name", { required: true, max: 180 }),
@@ -104,6 +108,8 @@ function normaliseStartupProfile(payload = {}, existing = {}) {
     loc: cleanStartupText(payload.location ?? payload.loc ?? existing.loc, "Location", { required: true, max: 180 }),
     website: cleanStartupText(payload.website ?? existing.website, "Website", { max: 500 }) || null,
     pilots: Number(pilots),
+    yearsActive: Number(yearsActive),
+    certifications: certifications.map((certification) => certification.trim()),
   };
 }
 
@@ -115,8 +121,16 @@ function canEditStartupProfile(user, startup) {
 function decorateApplication(app, db) {
   const startup = findStartup(db, app.startupId);
   const challenge = findChallenge(db, app.challengeId);
-  const verdict = startup ? runEligibilityCheck(startup, challenge) : null;
-  return { ...app, startup, ...verdict };
+  const verdict = app.eligibility || (startup ? runEligibilityCheck(startup, challenge, app.submittedAt) : null);
+  return { ...app, startup: startup ? publicStartupProfile(startup) : null, ...verdict };
+}
+
+function screenApplication(application, startup, challenge) {
+  const verdict = runEligibilityCheck(startup, challenge);
+  application.eligibility = verdict;
+  application.status = verdict.status === "Eligible" ? "Eligibility Passed" : "Eligibility Failed";
+  application.screeningHistory = [...(application.screeningHistory || []), verdict];
+  return verdict;
 }
 
 /** Attach the startup name to a raw evaluation record. */
@@ -196,8 +210,8 @@ router.post("/startups", requireRole("Startup"), (req, res) => {
     registered: true,
     dpiit: Boolean(req.user.profile?.dpiitNumber),
     recog: req.user.profile?.dpiitNumber ? "DPIIT Recognised" : "Pending Verification",
-    yearsActive: 0,
-    certifications: [],
+    yearsActive: profile.yearsActive,
+    certifications: profile.certifications,
     rating: null,
     badge: "Under Review",
     cin: req.user.profile?.cin || null,
@@ -499,15 +513,15 @@ router.get("/startup-invitations", requireRole("Startup"), (req, res) => {
 
 /* --------------------- Feature 2: Auto-Eligibility Screening ------------ */
 // Lists applications for a challenge, each with a live rule-based verdict.
-router.get("/challenges/:id/applications", (req, res) => {
+router.get("/challenges/:id/applications", requireRole("Government Official", "Platform Admin", "Expert Evaluator", "Startup"), (req, res) => {
   const db = readDB();
   const challenge = findChallenge(db, req.params.id);
   if (!challenge) return res.status(404).json({ error: "Challenge not found" });
 
-  const apps = db.applications
-    .filter((a) => a.challengeId === challenge.id)
-    .map((a) => decorateApplication(a, db))
-    .sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
+  let apps = db.applications.filter((a) => a.challengeId === challenge.id);
+  if (req.user.role === "Startup") apps = apps.filter((application) => findStartup(db, application.startupId)?.ownerUserId === req.user.id);
+  apps = apps.map((application) => decorateApplication(application, db)).sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
+  if (req.user.role === "Expert Evaluator") apps = apps.filter((application) => application.status === "Eligible");
 
   res.json(apps);
 });
@@ -518,10 +532,13 @@ router.post("/challenges/:id/applications", requireRole("Startup"), (req, res) =
   const db = readDB();
   const challenge = findChallenge(db, req.params.id);
   if (!challenge) return res.status(404).json({ error: "Challenge not found" });
+  if (isPrivateChallenge(challenge)) return res.status(409).json({ error: "Applications open only after a challenge is published." });
+  if (req.user.verificationStatus !== "Verified") return res.status(409).json({ error: "Complete startup verification before applying to a challenge." });
 
   const { startupId } = req.body || {};
   const startup = findStartup(db, startupId);
   if (!startup) return res.status(400).json({ error: "Unknown startupId" });
+  if (startup.ownerUserId !== req.user.id) return res.status(403).json({ error: "You can only apply using your own startup profile." });
 
   const already = db.applications.find((a) => a.challengeId === challenge.id && a.startupId === startupId);
   if (already) {
@@ -529,10 +546,27 @@ router.post("/challenges/:id/applications", requireRole("Startup"), (req, res) =
   }
 
   const application = { id: `ap_${randomUUID()}`, challengeId: challenge.id, startupId, submittedAt: new Date().toISOString() };
+  screenApplication(application, startup, challenge);
   db.applications.push(application);
+  const invitation = (db.invitations || []).find((record) => record.challengeId === challenge.id && record.startupId === startup.id && record.status === "Pending");
+  if (invitation) invitation.status = "Accepted";
+  recordChallengeHistory(challenge, { actor: req.user, event: "startup_applied", details: { startupId, applicationId: application.id, eligibilityStatus: application.eligibility.status } });
   writeDB(db);
 
   res.status(201).json(decorateApplication(application, db));
+});
+
+router.post("/applications/:id/rescreen", requireRole("Startup", "Government Official", "Platform Admin"), (req, res) => {
+  const db = readDB();
+  const application = (db.applications || []).find((record) => record.id === req.params.id);
+  if (!application) return res.status(404).json({ error: "Application not found" });
+  const startup = findStartup(db, application.startupId);
+  const challenge = findChallenge(db, application.challengeId);
+  if (!startup || !challenge) return res.status(409).json({ error: "The application is missing its startup or challenge record." });
+  if (req.user.role === "Startup" && startup.ownerUserId !== req.user.id) return res.status(403).json({ error: "You can only rescreen your own application." });
+  screenApplication(application, startup, challenge);
+  writeDB(db);
+  res.json(decorateApplication(application, db));
 });
 
 /* ----------------------- Feature 4: Expert Evaluation -------------------- */
@@ -588,6 +622,10 @@ router.post("/challenges/:id/evaluations", requireRole("Expert Evaluator", "Plat
   const { startupId, evaluatorName, scores } = req.body || {};
   const startup = findStartup(db, startupId);
   if (!startup) return res.status(400).json({ error: "Unknown startupId" });
+  const application = (db.applications || []).find((record) => record.challengeId === challenge.id && record.startupId === startupId);
+  if (!application) return res.status(409).json({ error: "This startup has not submitted an application for the challenge." });
+  const eligibility = application.eligibility || runEligibilityCheck(startup, challenge, application.submittedAt);
+  if (eligibility.status !== "Eligible") return res.status(422).json({ error: `This application cannot enter expert evaluation: ${eligibility.reason || "eligibility screening was not passed"}.` });
   if (!evaluatorName || !evaluatorName.trim()) return res.status(400).json({ error: "evaluatorName is required" });
 
   const scoreError = validateScores(scores);

@@ -12,9 +12,20 @@ export function eligibilityRequirementsFor(challenge) {
   const needsSecurityCert = !challenge || challenge.risk !== "Low";
   return [
     { key: "registered", label: "Business registration verified", critical: true, check: (a) => !!a.registered },
-    { key: "experience", label: "Incorporated < 10 years (or DPIIT relaxation applies)", critical: false, check: (a) => a.yearsActive < 10 || a.dpiit },
+    {
+      key: "experience",
+      label: "DPIIT recognition confirmed — experience and turnover relaxation applied",
+      critical: true,
+      check: (a) => !!a.dpiit || Number(a.yearsActive) >= 3,
+      failureLabel: "At least 3 years of operating experience is required unless DPIIT recognition is verified",
+    },
     ...(needsSecurityCert
-      ? [{ key: "cert", label: "Required certification: ISO 27001 (security)", critical: true, check: (a) => (a.certifications || []).includes("ISO 27001") }]
+      ? [{
+        key: "cert",
+        label: "Required security certification: ISO 27001 or equivalent",
+        critical: true,
+        check: (a) => (a.certifications || []).some((certification) => /iso\s*(\/\s*iec\s*)?27001/i.test(certification)),
+      }]
       : []),
   ];
 }
@@ -24,9 +35,9 @@ export function eligibilityRequirementsFor(challenge) {
  * A failed critical requirement (e.g. a missing mandatory certification)
  * auto-rejects the application before it reaches the evaluation stage.
  */
-export function runEligibilityCheck(startup, challenge) {
+export function runEligibilityCheck(startup, challenge, screenedAt = new Date().toISOString()) {
   const requirements = eligibilityRequirementsFor(challenge);
-  const results = requirements.map((r) => ({ key: r.key, label: r.label, critical: r.critical, pass: r.check(startup) }));
+  const results = requirements.map((r) => ({ key: r.key, label: r.label, failureLabel: r.failureLabel || r.label, critical: r.critical, pass: r.check(startup) }));
   const failedCritical = results.find((r) => !r.pass && r.critical);
   const failedAny = results.find((r) => !r.pass);
 
@@ -37,8 +48,10 @@ export function runEligibilityCheck(startup, challenge) {
 
   return {
     status,
-    reason: failedAny ? failedAny.label : null,
+    reason: failedAny ? failedAny.failureLabel : null,
     autoRejected: !!failedCritical,
     results,
+    screenedAt,
+    engine: "eligibility-rules-v1",
   };
 }

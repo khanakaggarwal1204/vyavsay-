@@ -1490,6 +1490,8 @@ function ChallengeDetail({ ch, onBack, role, onPublished }) {
   const [reviewConfirmed, setReviewConfirmed] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState(null);
+  const [applying, setApplying] = useState(false);
+  const [applicationMessage, setApplicationMessage] = useState(null);
   const tabs = ["Overview", ...(["Government Official", "Platform Admin"].includes(role) ? ["AI Startup Discovery"] : []), "Eligibility Screening", "Expert Evaluation", "Data / IP & Security", "Submitted Ideas (14)", "Updates"];
   async function publishAfterReview() {
     setPublishing(true);
@@ -1501,6 +1503,21 @@ function ChallengeDetail({ ch, onBack, role, onPublished }) {
       setPublishError(error.message);
     } finally {
       setPublishing(false);
+    }
+  }
+  async function applyAsStartup() {
+    setApplying(true);
+    setApplicationMessage(null);
+    try {
+      const { startup } = await api.getMyStartup();
+      if (!startup) throw new Error("Create your Startup Discovery Profile before applying.");
+      const application = await api.applyToChallenge(ch.id, startup.id);
+      const passed = application.status === "Eligible";
+      setApplicationMessage({ type: passed ? "success" : "warning", text: passed ? "Application submitted and eligibility screening passed. It is now available to evaluators." : `Application submitted, but screening failed: ${application.reason}. Update your profile evidence and request a rescreen.` });
+    } catch (error) {
+      setApplicationMessage({ type: "error", text: error.message });
+    } finally {
+      setApplying(false);
     }
   }
   return (
@@ -1523,8 +1540,9 @@ function ChallengeDetail({ ch, onBack, role, onPublished }) {
             <StatusChip label={ch.status} />
             <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
               <Btn variant="secondary" small>Save / Watch</Btn>
-              {ch.status === "Published" || ch.status === "Applications Open" ? <Btn small>Apply as Startup</Btn> : <Btn small disabled>Not visible to startups</Btn>}
+              {ch.status === "Published" || ch.status === "Applications Open" ? <Btn small onClick={applyAsStartup} disabled={role !== "Startup" || applying}>{applying ? "Submitting…" : role === "Startup" ? "Apply as Startup" : "Sign in as Startup to apply"}</Btn> : <Btn small disabled>Not visible to startups</Btn>}
             </div>
+            {applicationMessage && <div style={{ maxWidth: 300, marginTop: 8, fontSize: 11.5, color: applicationMessage.type === "success" ? C.teal : applicationMessage.type === "warning" ? C.brass : C.rust }}>{applicationMessage.text}</div>}
           </div>
         </div>
         <div style={{ marginTop: 20, paddingTop: 16, borderTop: `1px solid ${C.line}` }}>
@@ -1625,7 +1643,7 @@ function ChallengeDetail({ ch, onBack, role, onPublished }) {
       )}
 
       {tab === "AI Startup Discovery" && <StartupDiscoveryPanel ch={ch} role={role} />}
-      {tab === "Eligibility Screening" && <EligibilityPanel ch={ch} />}
+      {tab === "Eligibility Screening" && <EligibilityPanel ch={ch} role={role} />}
       {tab === "Expert Evaluation" && <ExpertEvaluationPanel ch={ch} />}
       {tab === "Data / IP & Security" && <DataIpPanel />}
       {tab === "Submitted Ideas (14)" && <SubmittedIdeasPanel />}
@@ -1804,21 +1822,30 @@ function StartupDiscoveryPanel({ ch, role }) {
 /*  ELIGIBILITY PANEL — feature: automatic pre-evaluation screening        */
 /*  Live data from GET /api/challenges/:id/applications                   */
 /* ---------------------------------------------------------------------- */
-function EligibilityPanel({ ch }) {
+function EligibilityPanel({ ch, role }) {
   const [apps, setApps] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [rescreening, setRescreening] = useState({});
+  const loadApplications = () => api.getApplications(ch.id).then(setApps);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    api.getApplications(ch.id)
+    loadApplications()
       .then((res) => { if (!cancelled) setApps(res); })
       .catch((err) => { if (!cancelled) setError(err.message); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [ch.id]);
+
+  async function rescreen(applicationId) {
+    setRescreening((current) => ({ ...current, [applicationId]: true }));
+    try { await api.rescreenApplication(applicationId); await loadApplications(); }
+    catch (requestError) { setError(requestError.message); }
+    finally { setRescreening((current) => ({ ...current, [applicationId]: false })); }
+  }
 
   if (loading) return <Card>Running auto-eligibility screening…</Card>;
   if (error) return <Card style={{ color: C.rust }}>Couldn't reach the eligibility service: {error}. Is the backend running on port 4000?</Card>;
@@ -1834,7 +1861,7 @@ function EligibilityPanel({ ch }) {
             No applications yet — invite a startup from the AI Startup Discovery tab to see it screened here.
           </div>
         )}
-        {apps.map(({ id, startup: a, results, status, reason }) => (
+        {apps.map(({ id, startup: a, results, status, reason, screenedAt, screeningHistory = [] }) => (
           <div key={id} style={{ padding: "13px 16px", borderTop: `1px solid ${C.line}` }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
@@ -1847,10 +1874,11 @@ function EligibilityPanel({ ch }) {
                   )}
                 </div>
                 <div style={{ fontSize: 11.5, color: status === "Auto-Rejected" ? C.rust : C.inkSoft }}>
-                  {status === "Eligible" ? "All checks passed" : status === "Auto-Rejected"
+                  {status === "Eligible" ? "Passed — all checks satisfied" : status === "Auto-Rejected"
                     ? `Eligibility check failed — ${reason.toLowerCase()}. Application auto-rejected before evaluation stage.`
                     : `Reason: ${reason}`}
                 </div>
+                {screenedAt && <div style={{ fontSize: 10.5, color: C.inkSoft, marginTop: 3 }}>Last screened {new Date(screenedAt).toLocaleString()} · {screeningHistory.length || 1} audit record(s)</div>}
               </div>
               <StatusChip label={status === "Eligible" ? "Startup Shortlisted" : status === "Missing Documents" ? "Under Review" : "Auto-Rejected"} small />
             </div>
@@ -1860,6 +1888,7 @@ function EligibilityPanel({ ch }) {
                   {r.pass ? <CheckCircle2 size={13} /> : <X size={13} />} {r.label}
                 </div>
               ))}
+              {(["Government Official", "Platform Admin", "Startup"].includes(role)) && <Btn small variant="secondary" icon={RefreshCw} onClick={() => rescreen(id)} disabled={rescreening[id]} style={{ marginLeft: "auto" }}>{rescreening[id] ? "Screening…" : "Re-run screening"}</Btn>}
             </div>
           </div>
         ))}
@@ -2522,7 +2551,7 @@ function Marketplace({ role }) {
 /* ---------------------------------------------------------------------- */
 function StartupProfileEditor({ onSaved }) {
   const [profile, setProfile] = useState(null);
-  const [form, setForm] = useState({ name: "", description: "", sector: "", tags: "", trl: "TRL 5", location: "", website: "", pilots: 0 });
+  const [form, setForm] = useState({ name: "", description: "", sector: "", tags: "", trl: "TRL 5", location: "", website: "", pilots: 0, yearsActive: 0, certifications: "" });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
@@ -2535,7 +2564,8 @@ function StartupProfileEditor({ onSaved }) {
         if (startup) setForm({
           name: startup.name || "", description: startup.description || "", sector: startup.sector || "",
           tags: (startup.tags || []).join(", "), trl: startup.trl || "TRL 5", location: startup.loc || "",
-          website: startup.website || "", pilots: startup.pilots || 0,
+          website: startup.website || "", pilots: startup.pilots || 0, yearsActive: startup.yearsActive || 0,
+          certifications: (startup.certifications || []).join(", "),
         });
       })
       .catch((error) => setMessage({ type: "error", text: error.message }))
@@ -2551,7 +2581,7 @@ function StartupProfileEditor({ onSaved }) {
     setSaving(true);
     setMessage(null);
     try {
-      const payload = { ...form, pilots: Number(form.pilots), tags: form.tags.split(",").map((tag) => tag.trim()).filter(Boolean) };
+      const payload = { ...form, pilots: Number(form.pilots), yearsActive: Number(form.yearsActive), tags: form.tags.split(",").map((tag) => tag.trim()).filter(Boolean), certifications: form.certifications.split(",").map((certification) => certification.trim()).filter(Boolean) };
       const result = profile ? await api.updateStartup(profile.id, payload) : await api.createStartup(payload);
       setProfile(result.startup);
       onSaved(result.startup);
@@ -2581,9 +2611,11 @@ function StartupProfileEditor({ onSaved }) {
           <Field label="Location"><input style={inputStyle} value={form.location} onChange={update("location")} placeholder="e.g. Pune, Maharashtra" /></Field>
           <Field label="Technology tags" hint="Separate tags with commas."><input style={inputStyle} value={form.tags} onChange={update("tags")} placeholder="AI/ML, IoT, Analytics" /></Field>
           <Field label="Past government pilots"><input style={inputStyle} type="number" min="0" value={form.pilots} onChange={update("pilots")} /></Field>
+          <Field label="Years in operation"><input style={inputStyle} type="number" min="0" value={form.yearsActive} onChange={update("yearsActive")} /></Field>
         </div>
         <Field label="What does your startup build?" hint="Use plain language. This is used for meaning-based discovery."><textarea style={{ ...inputStyle, height: 82 }} value={form.description} onChange={update("description")} placeholder="Describe the problem you solve, your product, and the outcomes you deliver." /></Field>
         <Field label="Website"><input style={inputStyle} value={form.website} onChange={update("website")} placeholder="https://example.com" /></Field>
+        <Field label="Certifications" hint="Separate certificate names with commas. ISO 27001 (or equivalent) is required for medium/high-risk challenges."><input style={inputStyle} value={form.certifications} onChange={update("certifications")} placeholder="ISO 27001, DPIIT Certificate" /></Field>
         <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
           <Btn small icon={CheckCircle2} onClick={save} disabled={saving}>{saving ? "Saving…" : "Save discovery profile"}</Btn>
           {message && <span style={{ fontSize: 12, color: message.type === "error" ? C.rust : C.teal }}>{message.text}</span>}

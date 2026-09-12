@@ -50,6 +50,7 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ startupId }),
     }),
+  rescreenApplication: (applicationId) => request(`/applications/${encodeURIComponent(applicationId)}/rescreen`, { method: "POST", body: JSON.stringify({}) }),
   getRubric: (challengeId) => request(`/challenges/${challengeId}/rubric`),
   getEvaluations: (challengeId) => request(`/challenges/${challengeId}/evaluations`),
   submitEvaluation: (challengeId, { startupId, evaluatorName, scores }) =>
