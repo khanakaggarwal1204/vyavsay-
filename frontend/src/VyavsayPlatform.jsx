@@ -2556,6 +2556,7 @@ function StartupProfileEditor({ onSaved }) {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
   const [invitations, setInvitations] = useState([]);
+  const [applyingInvite, setApplyingInvite] = useState({});
 
   useEffect(() => {
     api.getMyStartup()
@@ -2594,6 +2595,26 @@ function StartupProfileEditor({ onSaved }) {
     }
   }
 
+  async function applyToInvitation(invitation) {
+    if (!profile) {
+      setMessage({ type: "error", text: "Save your Startup Discovery Profile before applying." });
+      return;
+    }
+    setApplyingInvite((current) => ({ ...current, [invitation.id]: true }));
+    setMessage(null);
+    try {
+      const application = await api.applyToChallenge(invitation.challengeId, profile.id);
+      const passed = application.status === "Eligible";
+      setMessage({ type: passed ? "success" : "error", text: passed ? "Application submitted and eligibility screening passed." : `Application submitted, but screening failed: ${application.reason}. Update your evidence, then request a rescreen.` });
+      const { invitations: records } = await api.getStartupInvitations();
+      setInvitations(records);
+    } catch (error) {
+      setMessage({ type: "error", text: error.message });
+    } finally {
+      setApplyingInvite((current) => ({ ...current, [invitation.id]: false }));
+    }
+  }
+
   return (
     <Card style={{ marginBottom: 18, border: `1px solid ${C.violet}33` }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start", flexWrap: "wrap", marginBottom: 14 }}>
@@ -2622,7 +2643,7 @@ function StartupProfileEditor({ onSaved }) {
         </div>
         {invitations.length > 0 && <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${C.line}` }}>
           <div style={{ fontSize: 11, color: C.inkSoft, fontWeight: 800, marginBottom: 7 }}>CHALLENGE INVITATIONS</div>
-          {invitations.map((invite) => <div key={invite.id} style={{ fontSize: 12.5, color: C.ink, display: "flex", justifyContent: "space-between", gap: 10 }}><span>{invite.challenge?.title || "Published challenge"}</span><StatusChip label={invite.status} small /></div>)}
+          {invitations.map((invite) => <div key={invite.id} style={{ fontSize: 12.5, color: C.ink, display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", padding: "5px 0" }}><span>{invite.challenge?.title || "Published challenge"}</span><div style={{ display: "flex", gap: 7, alignItems: "center" }}><StatusChip label={invite.status} small />{invite.status === "Pending" && <Btn small onClick={() => applyToInvitation(invite)} disabled={applyingInvite[invite.id]}>{applyingInvite[invite.id] ? "Submitting…" : "Apply now"}</Btn>}</div></div>)}
         </div>}
       </>}
     </Card>
