@@ -2,6 +2,7 @@ import { Router } from "express";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import { departmentId, hash } from "../validation/source.js";
+import { formatBudget } from "../problemStatementSchema.js";
 import { accounts as scaleUpAccounts } from "../scaleup/domain.js";
 import {
   CATALOG,
@@ -446,11 +447,29 @@ export function createTemplateService({
         let answers = {};
         if (t.id === "problem" && c)
           answers = {
-            title: c.title,
-            sector: c.theme,
-            ...(c.requirementStatement
-              ? { painPoint: c.requirementStatement }
-              : {}),
+            title: c.title || "",
+            department: c.dept || "",
+            sector: c.sector || c.theme || "",
+            objective: c.objective || "",
+            rawProblemStatement: c.rawProblemStatement || "",
+            beneficiaries: c.beneficiaries || "",
+            location: c.location || "",
+            requirementStatement: c.requirementStatement || "",
+            expectedOutcome: c.expectedOutcome || c.outcome || "",
+            constraints: c.constraints || "",
+            budgetMin: c.budgetMin ?? "",
+            budgetMax: c.budgetMax ?? "",
+            currency: c.currency || "INR",
+            pilotDurationMonths: c.pilotDurationMonths ?? "",
+            submissionDeadline: c.submissionDeadline || "",
+            expectedPilotStartDate: c.expectedPilotStartDate || "",
+            primaryKpiName: c.primaryKpiName || "",
+            primaryKpiBaseline: c.primaryKpiBaseline ?? "",
+            primaryKpiTarget: c.primaryKpiTarget ?? "",
+            primaryKpiUnit: c.primaryKpiUnit || "",
+            measurementMethod: c.measurementMethod || "",
+            evidenceSource: c.evidenceSource || "",
+            targetDate: c.targetDate || "",
           };
         if (["agreement", "data-ip"].includes(t.id))
           answers.ipOption = IP_OPTIONS[0].id;
@@ -587,7 +606,13 @@ export function createTemplateService({
               r.sourceHash = hash(r.source);
               r.evidence = [];
             } else if (action === "submit") {
-              validateAnswers(t, r.answers, true);
+              const validated = validateAnswers(t, r.answers, true);
+              if (t.id === "problem")
+                check(
+                  departmentId(validated.department) === r.organisationId,
+                  "The problem-statement department must match the author's verified organisation.",
+                  403,
+                );
               check(
                 !stale(r, db),
                 "Source details changed. Refresh source and recheck your answers.",
@@ -777,18 +802,37 @@ export function createTemplateService({
         const payload = {
           id,
           title: a.title,
-          dept: actorName,
+          dept: a.department || actorName,
           status: "Applications Open",
           apps: 0,
+          sector: a.sector,
           theme: a.sector,
           risk: "Medium",
-          budget: `₹${a.budgetMin / 100000}–${a.budgetMax / 100000} L`,
-          deadline: a.timeline,
-          requirementStatement: a.painPoint,
-          outcome: a.outcome,
+          riskStatus: "Provisional until a reviewed Risk Management Template is linked",
+          procurementStatus: "Officer review required",
+          budget: formatBudget(a),
+          deadline: a.submissionDeadline,
+          objective: a.objective,
+          rawProblemStatement: a.rawProblemStatement,
+          beneficiaries: a.beneficiaries,
+          location: a.location,
+          requirementStatement: a.requirementStatement,
+          expectedOutcome: a.expectedOutcome,
+          outcome: a.expectedOutcome,
           constraints: a.constraints,
           budgetMin: a.budgetMin,
           budgetMax: a.budgetMax,
+          currency: a.currency,
+          pilotDurationMonths: a.pilotDurationMonths,
+          submissionDeadline: a.submissionDeadline,
+          expectedPilotStartDate: a.expectedPilotStartDate,
+          primaryKpiName: a.primaryKpiName,
+          primaryKpiBaseline: a.primaryKpiBaseline,
+          primaryKpiTarget: a.primaryKpiTarget,
+          primaryKpiUnit: a.primaryKpiUnit,
+          measurementMethod: a.measurementMethod,
+          evidenceSource: a.evidenceSource,
+          targetDate: a.targetDate,
           templateRecordId: r.id,
           templateVersion: r.templateVersion,
         };

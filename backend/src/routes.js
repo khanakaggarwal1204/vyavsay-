@@ -298,19 +298,31 @@ router.post("/requirements/structure", requireRole("Government Official", "Platf
 
 function draftPayload(challenge) {
   return {
-    title: challenge.title,
-    department: challenge.dept,
+    title: challenge.title || "",
+    department: challenge.dept || challenge.department || "",
+    sector: challenge.sector || challenge.theme || "Miscellaneous",
     objective: challenge.objective || "",
     rawProblemStatement: challenge.rawProblemStatement || "",
     beneficiaries: challenge.beneficiaries || "",
     location: challenge.location || "",
-    timeline: challenge.timeline || challenge.deadline || "",
-    budget: challenge.budget || "",
     requirementStatement: challenge.requirementStatement || "",
     expectedOutcome: challenge.expectedOutcome || challenge.outcome || "",
     constraints: challenge.constraints || "",
+    budgetMin: challenge.budgetMin ?? null,
+    budgetMax: challenge.budgetMax ?? null,
+    currency: challenge.currency || "INR",
+    pilotDurationMonths: challenge.pilotDurationMonths ?? null,
+    submissionDeadline: challenge.submissionDeadline || "",
+    expectedPilotStartDate: challenge.expectedPilotStartDate || "",
+    primaryKpiName: challenge.primaryKpiName || "",
+    primaryKpiBaseline: challenge.primaryKpiBaseline ?? null,
+    primaryKpiTarget: challenge.primaryKpiTarget ?? null,
+    primaryKpiUnit: challenge.primaryKpiUnit || "",
+    measurementMethod: challenge.measurementMethod || "",
+    evidenceSource: challenge.evidenceSource || "",
+    targetDate: challenge.targetDate || "",
     risk: challenge.risk || "Medium",
-    theme: challenge.theme || "Miscellaneous",
+    theme: challenge.theme || challenge.sector || "Miscellaneous",
   };
 }
 
@@ -326,8 +338,16 @@ function requireDraftEditor(req, res, challenge) {
   return true;
 }
 
-// A draft is a private challenge record from the first save onward. This
-// gives autosave a durable target and leaves a time-stamped history behind.
+function requireChallengeVersion(req, res, challenge) {
+  if (!Number.isInteger(req.body?.expectedVersion) || req.body.expectedVersion !== challenge.version) {
+    res.status(409).json({ error: "This challenge changed. Refresh before trying again.", currentVersion: challenge.version });
+    return false;
+  }
+  return true;
+}
+
+// A draft is private from the first save. Each accepted save increments the
+// version, so delayed autosaves cannot silently overwrite newer content.
 router.post("/challenge-drafts", requireRole("Government Official", "Platform Admin"), (req, res) => {
   let fields;
   try {
@@ -335,6 +355,8 @@ router.post("/challenge-drafts", requireRole("Government Official", "Platform Ad
   } catch (error) {
     return res.status(400).json({ error: error.message });
   }
+  if (req.user.role === "Government Official" && req.user.profile?.department && fields.department !== req.user.profile.department)
+    return res.status(403).json({ error: "Government officials can only create challenges for their verified department." });
   const db = readDB();
   const id = `CH-DRAFT-${randomUUID().slice(0, 8).toUpperCase()}`;
   const challenge = {
@@ -343,15 +365,20 @@ router.post("/challenge-drafts", requireRole("Government Official", "Platform Ad
     dept: fields.department || req.user.profile?.department || "Unassigned Department",
     status: "Draft",
     apps: 0,
-    deadline: fields.timeline || "Draft",
+    deadline: fields.submissionDeadline || "Draft",
     ...fields,
-    capabilities: [],
+    capabilities: Array.isArray(req.body?.capabilities) ? req.body.capabilities.filter((item) => typeof item === "string").slice(0, 12) : [],
+    draftingEngine: typeof req.body?.draftingEngine === "string" ? req.body.draftingEngine.slice(0, 120) : null,
+    draftingModel: typeof req.body?.draftingModel === "string" ? req.body.draftingModel.slice(0, 160) : null,
     createdBy: req.user.id,
+    createdByPersonId: req.user.profile?.employeeId || req.user.id,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+    version: 1,
     history: [],
+    review: null,
   };
-  recordChallengeHistory(challenge, { actor: req.user, event: "draft_created" });
+  recordChallengeHistory(challenge, { actor: req.user, event: "draft_created", details: { fields: draftPayload(challenge), draftingEngine: challenge.draftingEngine } });
   db.challenges.push(challenge);
   writeDB(db);
   res.status(201).json({ challenge, completeness: draftCompleteness(draftPayload(challenge)) });
@@ -360,21 +387,27 @@ router.post("/challenge-drafts", requireRole("Government Official", "Platform Ad
 router.patch("/challenge-drafts/:id", requireRole("Government Official", "Platform Admin"), (req, res) => {
   const db = readDB();
   const challenge = findChallenge(db, req.params.id);
-  if (!requireDraftEditor(req, res, challenge)) return;
-  if (challenge.status !== "Draft") return res.status(409).json({ error: "Only a Draft can be edited. Create a new draft to change a submitted challenge." });
+  if (!requireDraftEditor(req, res, challenge) || !requireChallengeVersion(req, res, challenge)) return;
+  if (!["Draft", "Changes Requested"].includes(challenge.status))
+    return res.status(409).json({ error: "Only a draft or correction request can be edited." });
   let fields;
   try {
     fields = normaliseChallengeDraft({ ...draftPayload(challenge), ...(req.body || {}) });
   } catch (error) {
     return res.status(400).json({ error: error.message });
   }
+  if (req.user.role === "Government Official" && req.user.profile?.department && fields.department !== req.user.profile.department)
+    return res.status(403).json({ error: "Government officials can only edit challenges for their verified department." });
   Object.assign(challenge, fields, {
     title: fields.title || "Untitled challenge",
     dept: fields.department || req.user.profile?.department || "Unassigned Department",
-    deadline: fields.timeline || "Draft",
+    deadline: fields.submissionDeadline || "Draft",
+    draftingEngine: typeof req.body?.draftingEngine === "string" ? req.body.draftingEngine.slice(0, 120) : challenge.draftingEngine,
+    draftingModel: typeof req.body?.draftingModel === "string" ? req.body.draftingModel.slice(0, 160) : challenge.draftingModel,
   });
   if (Array.isArray(req.body?.capabilities)) challenge.capabilities = req.body.capabilities.filter((item) => typeof item === "string").slice(0, 12);
-  recordChallengeHistory(challenge, { actor: req.user, event: "draft_saved", details: { completeness: draftCompleteness(fields).percent } });
+  challenge.version += 1;
+  recordChallengeHistory(challenge, { actor: req.user, event: "draft_saved", details: { fields: draftPayload(challenge), completeness: draftCompleteness(fields).percent } });
   writeDB(db);
   res.json({ challenge, completeness: draftCompleteness(fields) });
 });
@@ -382,13 +415,36 @@ router.patch("/challenge-drafts/:id", requireRole("Government Official", "Platfo
 router.post("/challenge-drafts/:id/submit", requireRole("Government Official", "Platform Admin"), (req, res) => {
   const db = readDB();
   const challenge = findChallenge(db, req.params.id);
-  if (!requireDraftEditor(req, res, challenge)) return;
-  if (challenge.status !== "Draft") return res.status(409).json({ error: "This challenge has already been submitted for review." });
+  if (!requireDraftEditor(req, res, challenge) || !requireChallengeVersion(req, res, challenge)) return;
+  if (!["Draft", "Changes Requested"].includes(challenge.status))
+    return res.status(409).json({ error: "This challenge is not editable or has already been submitted." });
   const fields = draftPayload(challenge);
   const validation = validateDraftForReview(fields);
   if (validation) return res.status(422).json(validation);
   challenge.status = "Under Review";
-  recordChallengeHistory(challenge, { actor: req.user, event: "submitted_for_review", details: { completeness: 100 } });
+  challenge.version += 1;
+  recordChallengeHistory(challenge, { actor: req.user, event: "submitted_for_review", details: { fields, completeness: 100, previousFindings: challenge.review?.findings || null } });
+  writeDB(db);
+  res.json({ challenge });
+});
+
+router.post("/challenge-drafts/:id/review", requireRole("Platform Admin"), (req, res) => {
+  const db = readDB();
+  const challenge = findChallenge(db, req.params.id);
+  if (!challenge) return res.status(404).json({ error: "Challenge draft not found." });
+  if (!requireChallengeVersion(req, res, challenge)) return;
+  if (challenge.status !== "Under Review") return res.status(409).json({ error: "Only a challenge under review can receive a decision." });
+  const reviewerPersonId = req.user.profile?.employeeId || req.user.id;
+  if (challenge.createdBy === req.user.id || challenge.createdByPersonId === reviewerPersonId)
+    return res.status(403).json({ error: "The challenge author cannot review their own submission, including through another account." });
+  const decision = req.body?.decision;
+  if (!["approved", "changes_requested"].includes(decision)) return res.status(422).json({ error: "Choose approve or request changes." });
+  const findings = typeof req.body?.findings === "string" ? req.body.findings.trim() : "";
+  if (findings.length < 15 || findings.length > 3000) return res.status(422).json({ error: "Provide review findings between 15 and 3000 characters." });
+  challenge.status = decision === "approved" ? "Approved" : "Changes Requested";
+  challenge.review = { decision, findings, reviewerId: req.user.id, reviewedAt: new Date().toISOString(), reviewedVersion: challenge.version };
+  challenge.version += 1;
+  recordChallengeHistory(challenge, { actor: req.user, event: decision, details: { findings, reviewedFields: draftPayload(challenge) } });
   writeDB(db);
   res.json({ challenge });
 });
@@ -397,48 +453,26 @@ router.post("/challenge-drafts/:id/publish", requireRole("Platform Admin"), (req
   const db = readDB();
   const challenge = findChallenge(db, req.params.id);
   if (!challenge) return res.status(404).json({ error: "Challenge draft not found." });
-  if (challenge.status !== "Under Review") return res.status(409).json({ error: "Only a challenge under review can be published." });
+  if (!requireChallengeVersion(req, res, challenge)) return;
+  if (challenge.status !== "Approved" || challenge.review?.decision !== "approved")
+    return res.status(409).json({ error: "Only an independently approved challenge can be published." });
+  if (challenge.createdBy === req.user.id || challenge.review.reviewerId !== req.user.id)
+    return res.status(403).json({ error: "The independent reviewer who approved this version must publish it." });
   const validation = validateDraftForReview(draftPayload(challenge));
   if (validation) return res.status(422).json(validation);
   challenge.status = "Published";
   challenge.publishedAt = new Date().toISOString();
-  recordChallengeHistory(challenge, { actor: req.user, event: "published_after_human_review" });
+  challenge.version += 1;
+  recordChallengeHistory(challenge, { actor: req.user, event: "published_after_independent_review", details: { approvedReview: challenge.review } });
   writeDB(db);
   queueEmbeddingRefresh("challenge", challenge.id);
   res.json({ challenge });
 });
 
-// Publishes a new challenge (department fills the structured form -> this
-// persists it, using the theme/requirement generated above). Every challenge
-// created this way immediately works with AI Startup Discovery and
-// Auto-Eligibility Screening, since those key off the same `theme`/`risk`
-// fields as the seeded demo challenges.
-router.post("/challenges", requireRole("Government Official", "Platform Admin"), (req, res) => {
-  const db = readDB();
-  const { title, dept, budget, risk, theme, requirementStatement, capabilities, deadline, location } = req.body || {};
-  if (!title || !title.trim()) return res.status(400).json({ error: "title is required" });
-
-  const existingIds = new Set(db.challenges.map((c) => c.id));
-  const challenge = {
-    id: slugChallengeId(title, existingIds),
-    title: title.trim(),
-    dept: dept?.trim() || "Unassigned Department",
-    status: "Applications Open",
-    apps: 0,
-    budget: budget?.trim() || "TBD",
-    deadline: deadline?.trim() || "Draft",
-    theme: theme || "Miscellaneous",
-    risk: risk || "Medium",
-    requirementStatement: requirementStatement || null,
-    capabilities: capabilities || [],
-    location: location?.trim() || null,
-    createdBy: req.user.id,
-  };
-
-  db.challenges.push(challenge);
-  writeDB(db);
-  queueEmbeddingRefresh("challenge", challenge.id);
-  res.status(201).json(challenge);
+// Legacy direct publication is closed. All new challenges must pass through
+// the versioned draft, independent review, and publication workflow above.
+router.post("/challenges", requireRole("Government Official", "Platform Admin"), (_req, res) => {
+  res.status(410).json({ error: "Direct challenge creation is disabled. Create a challenge draft and complete independent review." });
 });
 
 /* --------------------- Feature 1: AI Startup Discovery ------------------ */

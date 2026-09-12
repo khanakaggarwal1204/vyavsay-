@@ -1,4 +1,5 @@
 import { RUBRIC_CATEGORIES, weightsForChallenge } from "../evaluation.js";
+import { PROBLEM_STATEMENT_FIELDS } from "../problemStatementSchema.js";
 
 const field = (key, label, type = "text", options) => ({
   key,
@@ -38,18 +39,10 @@ export const CONTROLS = [
 export const CATALOG = [
   {
     id: "problem",
-    name: "Problem Statement",
+    name: "Outcome-Based Problem Statement",
     category: "Challenge",
-    fields: [
-      field("title", "Challenge title"),
-      field("sector", "Sector"),
-      field("painPoint", "Pain point", "textarea"),
-      field("outcome", "Measurable expected outcome", "textarea"),
-      field("budgetMin", "Minimum budget (INR)", "number"),
-      field("budgetMax", "Maximum budget (INR)", "number"),
-      field("timeline", "Delivery timeline"),
-      field("constraints", "Constraints", "textarea"),
-    ],
+    version: 2,
+    fields: PROBLEM_STATEMENT_FIELDS,
   },
   {
     id: "evaluation",
@@ -153,7 +146,7 @@ export const CATALOG = [
   },
 ].map((t) => ({
   ...t,
-  version: 1,
+  version: t.version || 1,
   contentStatus: "Review required",
   fields: t.fields,
 }));
@@ -196,6 +189,29 @@ export function validateAnswers(template, input, complete = false) {
       new Error("Minimum budget cannot exceed maximum budget."),
       { status: 422 },
     );
+  if (template.id === "problem" && complete) {
+    const measurable = /\d/.test(answers.expectedOutcome) &&
+      /(day|week|month|year|quarter|within|by\s)/i.test(answers.expectedOutcome);
+    if (!measurable)
+      throw Object.assign(
+        new Error("Expected outcome must include a number and timeframe."),
+        { status: 422 },
+      );
+    if (answers.primaryKpiTarget === answers.primaryKpiBaseline)
+      throw Object.assign(
+        new Error("KPI target must differ from its baseline."),
+        { status: 422 },
+      );
+    for (const key of ["submissionDeadline", "expectedPilotStartDate", "targetDate"]) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(answers[key]) || !Number.isFinite(Date.parse(answers[key])))
+        throw Object.assign(new Error(`${key} must be a valid date.`), { status: 422 });
+    }
+    if (answers.submissionDeadline >= answers.expectedPilotStartDate)
+      throw Object.assign(
+        new Error("Expected pilot start must be after the startup submission deadline."),
+        { status: 422 },
+      );
+  }
   return answers;
 }
 

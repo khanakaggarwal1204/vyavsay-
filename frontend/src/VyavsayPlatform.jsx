@@ -1096,6 +1096,7 @@ export default function App() {
   const [view, setView] = useState("dashboard");
   const [role, setRole] = useState("Government Official");
   const [selectedChallenge, setSelectedChallenge] = useState(null);
+  const [editingChallenge, setEditingChallenge] = useState(null);
   const [roleMenuOpen, setRoleMenuOpen] = useState(false);
   const [authUser, setAuthUser] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
@@ -1253,9 +1254,9 @@ export default function App() {
           ) : (
             <>
               {view === "dashboard" && <Dashboard role={role} name={authUser?.name} onOpenChallenge={goDetail} setView={setView} />}
-              {view === "challenges" && <ChallengesList onOpen={goDetail} onCreate={() => setView("create-challenge")} />}
-              {view === "challenge-detail" && <ChallengeDetail ch={selectedChallenge || CHALLENGES[0]} role={role} onBack={() => setView("challenges")} onPublished={(challenge) => setSelectedChallenge(challenge)} />}
-              {view === "create-challenge" && <CreateChallenge role={role} onDone={(newCh) => { if (newCh) { setSelectedChallenge(newCh); setView("challenge-detail"); } else { setView("challenges"); } }} />}
+              {view === "challenges" && <ChallengesList onOpen={goDetail} onCreate={() => { setEditingChallenge(null); setView("create-challenge"); }} />}
+              {view === "challenge-detail" && <ChallengeDetail ch={selectedChallenge || CHALLENGES[0]} role={role} onBack={() => setView("challenges")} onChanged={(challenge) => setSelectedChallenge(challenge)} onEdit={(challenge) => { setEditingChallenge(challenge); setView("create-challenge"); }} />}
+              {view === "create-challenge" && <CreateChallenge role={role} userId={authUser?.id} verifiedDepartment={authUser?.profile?.department} initialDraft={editingChallenge} onDone={(newCh) => { setEditingChallenge(null); if (newCh) { setSelectedChallenge(newCh); setView("challenge-detail"); } else { setView("challenges"); } }} />}
               {view === "marketplace" && <Marketplace role={role} />}
               {view === "evaluation" && <EvaluationWorkspace />}
               {view === "pilots" && <Pilots />}
@@ -1485,20 +1486,34 @@ function ChallengesList({ onOpen, onCreate }) {
 /* ---------------------------------------------------------------------- */
 /*  CHALLENGE DETAIL                                                       */
 /* ---------------------------------------------------------------------- */
-function ChallengeDetail({ ch, onBack, role, onPublished }) {
+function ChallengeDetail({ ch, onBack, role, onChanged, onEdit }) {
   const [tab, setTab] = useState("overview");
-  const [reviewConfirmed, setReviewConfirmed] = useState(false);
+  const [reviewFindings, setReviewFindings] = useState("");
+  const [reviewDecision, setReviewDecision] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState(null);
   const [applying, setApplying] = useState(false);
   const [applicationMessage, setApplicationMessage] = useState(null);
   const tabs = ["Overview", ...(["Government Official", "Platform Admin"].includes(role) ? ["AI Startup Discovery"] : []), "Eligibility Screening", "Expert Evaluation", "Data / IP & Security", "Submitted Ideas (14)", "Updates"];
+  async function reviewChallenge(decision) {
+    setReviewDecision(true);
+    setPublishError(null);
+    try {
+      const response = await api.reviewChallengeDraft(ch.id, ch.version, decision, reviewFindings);
+      onChanged(response.challenge);
+      setReviewFindings("");
+    } catch (error) {
+      setPublishError(error.message);
+    } finally {
+      setReviewDecision(false);
+    }
+  }
   async function publishAfterReview() {
     setPublishing(true);
     setPublishError(null);
     try {
-      const response = await api.publishChallengeDraft(ch.id);
-      onPublished(response.challenge);
+      const response = await api.publishChallengeDraft(ch.id, ch.version);
+      onChanged(response.challenge);
     } catch (error) {
       setPublishError(error.message);
     } finally {
@@ -1570,7 +1585,7 @@ function ChallengeDetail({ ch, onBack, role, onPublished }) {
               {ch.requirementStatement ? (
                 <>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10.5, fontWeight: 700, color: C.violet, marginBottom: 6 }}>
-                    <Sparkles size={12} /> AI-STRUCTURED REQUIREMENT
+                    <Sparkles size={12} /> {ch.draftingEngine?.startsWith("llm:") ? `MODEL-ASSISTED REQUIREMENT · ${ch.draftingEngine.replace("llm:", "")}` : "DETERMINISTIC DRAFTING SUGGESTION"}
                   </div>
                   <p style={{ fontSize: 13, color: C.ink, lineHeight: 1.6, fontWeight: 500 }}>{ch.requirementStatement}</p>
                   {ch.capabilities?.length > 0 && (
@@ -1596,10 +1611,28 @@ function ChallengeDetail({ ch, onBack, role, onPublished }) {
             </Card>
             {ch.status === "Under Review" && role === "Platform Admin" && (
               <Card style={{ marginBottom: 16, border: `1px solid ${C.brass}66` }}>
-                <div style={{ fontWeight: 700, marginBottom: 6 }}>Human publication review</div>
-                <div style={{ fontSize: 12.5, color: C.inkSoft, marginBottom: 10 }}>Confirm the requirement, outcome and constraints have been reviewed before making this challenge visible to startups.</div>
-                <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12.5, marginBottom: 12 }}><input type="checkbox" checked={reviewConfirmed} onChange={(event) => setReviewConfirmed(event.target.checked)} /> I have completed the human review.</label>
-                <Btn variant="brass" small icon={CheckCircle2} onClick={publishAfterReview} disabled={!reviewConfirmed || publishing}>{publishing ? "Publishing…" : "Publish challenge"}</Btn>
+                <div style={{ fontWeight: 700, marginBottom: 6 }}>Independent publication review</div>
+                <div style={{ fontSize: 12.5, color: C.inkSoft, marginBottom: 10 }}>Record specific findings. The backend prevents the challenge author from reviewing their own submission.</div>
+                <Field label="Review findings"><textarea style={{ ...inputStyle, height: 80 }} value={reviewFindings} onChange={(event) => setReviewFindings(event.target.value)} placeholder="Confirm the requirement, measurable outcome, KPI, budget and constraints, or explain required corrections." /></Field>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <Btn variant="secondary" small onClick={() => reviewChallenge("changes_requested")} disabled={reviewDecision || reviewFindings.trim().length < 15}>Request corrections</Btn>
+                  <Btn variant="brass" small icon={CheckCircle2} onClick={() => reviewChallenge("approved")} disabled={reviewDecision || reviewFindings.trim().length < 15}>Approve reviewed version</Btn>
+                </div>
+                {publishError && <div style={{ color: C.rust, fontSize: 12, marginTop: 8 }}>{publishError}</div>}
+              </Card>
+            )}
+            {ch.status === "Changes Requested" && (
+              <Card style={{ marginBottom: 16, border: `1px solid ${C.rust}55`, background: C.rustSoft }}>
+                <div style={{ fontWeight: 700, marginBottom: 6 }}>Corrections required</div>
+                <div style={{ fontSize: 12.5, marginBottom: 10 }}>{ch.review?.findings || "Review the record and submit a corrected version."}</div>
+                {role === "Government Official" && <Btn small onClick={() => onEdit(ch)}>Open correction workspace</Btn>}
+              </Card>
+            )}
+            {ch.status === "Approved" && role === "Platform Admin" && (
+              <Card style={{ marginBottom: 16, border: `1px solid ${C.teal}55`, background: C.tealSoft }}>
+                <div style={{ fontWeight: 700, marginBottom: 6 }}>Approved for publication</div>
+                <div style={{ fontSize: 12.5, marginBottom: 10 }}>Review findings: {ch.review?.findings}</div>
+                <Btn variant="brass" small icon={CheckCircle2} onClick={publishAfterReview} disabled={publishing}>{publishing ? "Publishing…" : "Publish approved challenge"}</Btn>
                 {publishError && <div style={{ color: C.rust, fontSize: 12, marginTop: 8 }}>{publishError}</div>}
               </Card>
             )}
@@ -1628,9 +1661,8 @@ function ChallengeDetail({ ch, onBack, role, onPublished }) {
             </Card>
             <Card style={{ marginBottom: 16 }}>
               <div style={{ fontWeight: 700, marginBottom: 10 }}>Procurement pathway</div>
-              <div style={{ fontSize: 12.5, color: C.inkSoft, marginBottom: 6 }}>Recommended</div>
-              <StatusChip label="Pilot Active" small />
-              <div style={{ fontSize: 12, marginTop: 6, color: C.inkSoft }}>Startup / MSME innovation procurement (pilot-to-scale) route under GoM GR 2024/Innovation-07</div>
+              <StatusChip label="Officer review required" small />
+              <div style={{ fontSize: 12, marginTop: 8, color: C.inkSoft }}>No route is inferred from budget, urgency or startup status alone. A reviewed Procurement Pathway Template must match an authorised, date-bounded policy before an officer selects the route.</div>
             </Card>
             <Card>
               <div style={{ fontWeight: 700, marginBottom: 8 }}>Required documents</div>
@@ -2151,65 +2183,107 @@ function SubmittedIdeasPanel() {
 /* ---------------------------------------------------------------------- */
 /*  CREATE CHALLENGE WIZARD                                                */
 /* ---------------------------------------------------------------------- */
-function CreateChallenge({ onDone }) {
-  const steps = ["Plain-language problem", "Structured specification", "Pilot context", "Human review"];
+function CreateChallenge({ onDone, userId, role, verifiedDepartment, initialDraft = null }) {
+  const steps = ["Plain-language problem", "Structured specification", "Pilot and budget", "Measurement plan", "Human review"];
+  const storageKey = `vyavsay.challenge-draft.v2.${userId || "anonymous"}`;
   const emptyForm = {
-    title: "", department: "", objective: "", beneficiaries: "", rawProblemStatement: "",
-    requirementStatement: "", expectedOutcome: "", constraints: "", budget: "", location: "", timeline: "",
-    risk: "Medium", theme: "Miscellaneous",
+    title: "", department: verifiedDepartment || "", sector: "", objective: "", beneficiaries: "", rawProblemStatement: "",
+    location: "", requirementStatement: "", expectedOutcome: "", constraints: "",
+    budgetMin: "", budgetMax: "", currency: "INR", pilotDurationMonths: "", submissionDeadline: "",
+    expectedPilotStartDate: "", primaryKpiName: "", primaryKpiBaseline: "", primaryKpiTarget: "",
+    primaryKpiUnit: "", measurementMethod: "", evidenceSource: "", targetDate: "",
   };
   const cached = (() => {
-    try { return JSON.parse(localStorage.getItem("vyavsay.challenge-draft.v1") || "null"); } catch { return null; }
+    try { return JSON.parse(localStorage.getItem(storageKey) || "null"); } catch { return null; }
   })();
+  const sourceDraft = initialDraft || null;
+  const initialFields = sourceDraft ? {
+    ...emptyForm,
+    title: sourceDraft.title || "", department: sourceDraft.dept || sourceDraft.department || "",
+    sector: sourceDraft.sector || sourceDraft.theme || "", objective: sourceDraft.objective || "",
+    beneficiaries: sourceDraft.beneficiaries || "", rawProblemStatement: sourceDraft.rawProblemStatement || "",
+    location: sourceDraft.location || "", requirementStatement: sourceDraft.requirementStatement || "",
+    expectedOutcome: sourceDraft.expectedOutcome || sourceDraft.outcome || "", constraints: sourceDraft.constraints || "",
+    budgetMin: sourceDraft.budgetMin ?? "", budgetMax: sourceDraft.budgetMax ?? "", currency: sourceDraft.currency || "INR",
+    pilotDurationMonths: sourceDraft.pilotDurationMonths ?? "", submissionDeadline: sourceDraft.submissionDeadline || "",
+    expectedPilotStartDate: sourceDraft.expectedPilotStartDate || "", primaryKpiName: sourceDraft.primaryKpiName || "",
+    primaryKpiBaseline: sourceDraft.primaryKpiBaseline ?? "", primaryKpiTarget: sourceDraft.primaryKpiTarget ?? "",
+    primaryKpiUnit: sourceDraft.primaryKpiUnit || "", measurementMethod: sourceDraft.measurementMethod || "",
+    evidenceSource: sourceDraft.evidenceSource || "", targetDate: sourceDraft.targetDate || "",
+  } : { ...emptyForm, ...(cached?.fields || {}) };
   const [step, setStep] = useState(0);
-  const [f, setF] = useState({ ...emptyForm, ...(cached?.fields || {}) });
-  const [draftId, setDraftId] = useState(cached?.draftId || null);
-  const [structured, setStructured] = useState(cached?.structured || null);
+  const [f, setF] = useState(initialFields);
+  const [draftId, setDraftId] = useState(sourceDraft?.id || cached?.draftId || null);
+  const [draftVersion, setDraftVersion] = useState(sourceDraft?.version || cached?.version || null);
+  const [structured, setStructured] = useState(cached?.structured || (sourceDraft?.draftingEngine ? { engine: sourceDraft.draftingEngine, model: sourceDraft.draftingModel, capabilities: sourceDraft.capabilities || [] } : null));
   const [structuring, setStructuring] = useState(false);
   const [structureError, setStructureError] = useState(null);
-  const [saveState, setSaveState] = useState(cached?.draftId ? "Saved" : "Not saved");
+  const [saveState, setSaveState] = useState(draftId ? "Saved" : "Not saved");
   const [saveError, setSaveError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  const saveSequence = useRef(0);
+  const draftIdRef = useRef(draftId);
+  const versionRef = useRef(draftVersion);
+  const saveQueue = useRef(Promise.resolve());
 
-  const required = ["title", "department", "objective", "rawProblemStatement", "beneficiaries", "location", "timeline", "budget", "requirementStatement", "expectedOutcome", "constraints"];
-  const completeness = useMemo(() => Math.round((required.filter((key) => f[key]?.trim()).length / required.length) * 100), [f]);
+  const required = Object.keys(emptyForm);
+  const completed = required.filter((key) => f[key] !== "" && f[key] !== null && f[key] !== undefined).length;
+  const completeness = Math.round((completed / required.length) * 100);
+  const formProblems = useMemo(() => {
+    const problems = [];
+    if (f.expectedOutcome && (!/\d/.test(f.expectedOutcome) || !/(day|week|month|year|quarter|within|by\s)/i.test(f.expectedOutcome))) problems.push("Expected outcome needs a number and timeframe.");
+    if (f.budgetMin !== "" && f.budgetMax !== "" && Number(f.budgetMin) > Number(f.budgetMax)) problems.push("Minimum budget cannot exceed maximum budget.");
+    if (f.primaryKpiBaseline !== "" && f.primaryKpiTarget !== "" && Number(f.primaryKpiBaseline) === Number(f.primaryKpiTarget)) problems.push("KPI target must differ from its baseline.");
+    if (f.submissionDeadline && f.expectedPilotStartDate && f.submissionDeadline >= f.expectedPilotStartDate) problems.push("Pilot start must be after the submission deadline.");
+    return problems;
+  }, [f]);
+  const ready = completeness === 100 && formProblems.length === 0;
   const update = (key, value) => setF((current) => ({ ...current, [key]: value }));
   const set = (key) => (event) => update(key, event.target.value);
-  const payload = () => ({ ...f, capabilities: structured?.capabilities || [] });
+  const payloadFor = (fields) => ({
+    ...fields,
+    capabilities: structured?.capabilities || sourceDraft?.capabilities || [],
+    draftingEngine: structured?.engine || sourceDraft?.draftingEngine || null,
+    draftingModel: structured?.model || sourceDraft?.draftingModel || null,
+  });
+  const cache = (fields, nextId = draftIdRef.current, nextVersion = versionRef.current) =>
+    localStorage.setItem(storageKey, JSON.stringify({ draftId: nextId, version: nextVersion, fields, structured }));
 
-  async function saveDraft(force = false) {
-    const hasContent = Object.values(f).some((value) => typeof value === "string" && value.trim());
-    if (!hasContent && !force) return null;
-    const requestId = ++saveSequence.current;
-    setSaveState("Saving");
-    setSaveError(null);
-    try {
-      const response = draftId
-        ? await api.saveChallengeDraft(draftId, payload())
-        : await api.createChallengeDraft(payload());
-      const challenge = response.challenge;
-      if (requestId !== saveSequence.current) return challenge;
-      setDraftId(challenge.id);
-      setSaveState("Saved");
-      localStorage.setItem("vyavsay.challenge-draft.v1", JSON.stringify({ draftId: challenge.id, fields: f, structured }));
-      return challenge;
-    } catch (error) {
-      if (requestId === saveSequence.current) {
+  function saveDraft(force = false, fields = f) {
+    const hasContent = Object.values(fields).some((value) => String(value ?? "").trim());
+    if (!hasContent && !force) return Promise.resolve(null);
+    const operation = async () => {
+      setSaveState("Saving");
+      setSaveError(null);
+      try {
+        const response = draftIdRef.current
+          ? await api.saveChallengeDraft(draftIdRef.current, payloadFor(fields), versionRef.current)
+          : await api.createChallengeDraft(payloadFor(fields));
+        const challenge = response.challenge;
+        draftIdRef.current = challenge.id;
+        versionRef.current = challenge.version;
+        setDraftId(challenge.id);
+        setDraftVersion(challenge.version);
+        setSaveState("Saved");
+        cache(fields, challenge.id, challenge.version);
+        return challenge;
+      } catch (error) {
         setSaveState("Saved locally");
         setSaveError(error.message);
-        localStorage.setItem("vyavsay.challenge-draft.v1", JSON.stringify({ draftId, fields: f, structured }));
+        cache(fields);
+        if (force) throw error;
+        return null;
       }
-      if (force) throw error;
-      return null;
-    }
+    };
+    saveQueue.current = saveQueue.current.catch(() => null).then(operation);
+    return saveQueue.current;
   }
 
   useEffect(() => {
-    localStorage.setItem("vyavsay.challenge-draft.v1", JSON.stringify({ draftId, fields: f, structured }));
-    const hasContent = Object.values(f).some((value) => typeof value === "string" && value.trim());
+    cache(f);
+    const hasContent = Object.values(f).some((value) => String(value ?? "").trim());
     if (!hasContent) return undefined;
-    const timer = window.setTimeout(() => { saveDraft(); }, 900);
+    const snapshot = { ...f };
+    const timer = window.setTimeout(() => { saveDraft(false, snapshot); }, 900);
     return () => window.clearTimeout(timer);
   }, [f]);
 
@@ -2221,7 +2295,7 @@ function CreateChallenge({ onDone }) {
       setStructured(result);
       setF((current) => ({
         ...current,
-        theme: result.theme || current.theme,
+        sector: result.theme || current.sector,
         requirementStatement: result.requirementStatement || current.requirementStatement,
         expectedOutcome: result.expectedOutcome || current.expectedOutcome,
         constraints: result.constraints || current.constraints,
@@ -2242,9 +2316,9 @@ function CreateChallenge({ onDone }) {
     setSubmitting(true);
     setSaveError(null);
     try {
-      const saved = await saveDraft(true);
-      const response = await api.submitChallengeDraft(saved?.id || draftId);
-      localStorage.removeItem("vyavsay.challenge-draft.v1");
+      await saveDraft(true, { ...f });
+      const response = await api.submitChallengeDraft(draftIdRef.current, versionRef.current);
+      localStorage.removeItem(storageKey);
       onDone(response.challenge);
     } catch (error) {
       setSaveError(error.message);
@@ -2253,150 +2327,83 @@ function CreateChallenge({ onDone }) {
     }
   }
 
+  const engineLabel = structured?.llmUsed
+    ? `${structured.engine?.replace("llm:", "") || "configured model"}${structured.model ? ` · ${structured.model}` : ""}`
+    : structured?.engine === "deterministic-policy-structuring-v1"
+      ? "deterministic fallback"
+      : structured?.engine || "not generated yet";
+
   return (
     <div>
-      <SectionTitle eyebrow="CHALLENGE IDENTIFICATION" title="Turn a complaint into a buildable challenge" />
+      <SectionTitle eyebrow="TEMPLATE 1 · CHALLENGE IDENTIFICATION" title={sourceDraft?.status === "Changes Requested" ? "Correct and resubmit the problem statement" : "Turn a complaint into a buildable challenge"} />
+      {sourceDraft?.review?.findings && <Card style={{ marginBottom: 16, border: `1px solid ${C.rust}55`, background: C.rustSoft }}><b>Reviewer corrections:</b> {sourceDraft.review.findings}</Card>}
       <div className="challenge-identification-grid" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 300px", gap: 20 }}>
         <div>
           <div className="challenge-identification-steps" style={{ display: "flex", gap: 6, marginBottom: 18 }}>
-            {steps.map((s, i) => (
-              <div key={s} onClick={() => setStep(i)}
-                style={{
-                  flex: 1, padding: "9px 6px", textAlign: "center", fontSize: 12, fontWeight: 700, cursor: "pointer",
-                  borderRadius: 4, background: step === i ? C.ink : "#fff", color: step === i ? "#fff" : C.inkSoft,
-                  border: `1px solid ${step === i ? C.ink : C.line}`,
-                }}>
-                {i + 1}. {s}
-              </div>
-            ))}
+            {steps.map((label, index) => <div key={label} onClick={() => setStep(index)} style={{ flex: 1, padding: "9px 6px", textAlign: "center", fontSize: 11.5, fontWeight: 700, cursor: "pointer", borderRadius: 4, background: step === index ? C.ink : "#fff", color: step === index ? "#fff" : C.inkSoft, border: `1px solid ${step === index ? C.ink : C.line}` }}>{index + 1}. {label}</div>)}
           </div>
-
           <Card>
-            {step === 0 && (
-              <>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, background: C.brassSoft, color: C.brass, padding: "8px 12px", borderRadius: 4, fontSize: 12, marginBottom: 16 }}>
-                  <Info size={14} /> Write it exactly as you would say it. Vyavsay will help turn it into a specification, but you remain responsible for reviewing every word.
-                </div>
-                <Field label="Department"><input style={inputStyle} value={f.department} onChange={set("department")} placeholder="e.g. Urban Development" /></Field>
-                <Field label="Problem statement title"><input style={inputStyle} value={f.title} onChange={set("title")} placeholder="e.g. Real-time public transport tracking" /></Field>
-                <Field label="Department objective"><textarea style={{ ...inputStyle, height: 70 }} value={f.objective} onChange={set("objective")} placeholder="What is the department ultimately trying to achieve?" /></Field>
-                <Field label="Target beneficiaries"><input style={inputStyle} value={f.beneficiaries} onChange={set("beneficiaries")} placeholder="e.g. Daily commuters in Tier-2 cities" /></Field>
-                <Field label="Raw problem statement" hint="Use plain words. Example: Our files frequently get lost during inter-department transfers."><textarea style={{ ...inputStyle, height: 92 }} value={f.rawProblemStatement} onChange={set("rawProblemStatement")} placeholder="What is going wrong today?" /></Field>
-
-                <Btn variant="secondary" small icon={Sparkles} onClick={generateRequirement} disabled={structuring}>
-                  {structuring ? "Structuring…" : structured ? "Structure with AI again" : "Structure with AI"}
-                </Btn>
-
-                {structureError && (
-                  <div style={{ marginTop: 12, fontSize: 12, color: C.rust }}>
-                    Couldn't structure this draft: {structureError}
-                  </div>
-                )}
-
-                {structured && structured.requirementStatement && (
-                  <div style={{ marginTop: 14, padding: 14, borderRadius: 6, background: C.violetSoft, border: `1px solid ${C.violet}22` }}>
-                    <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-                      <Sparkles size={15} color={C.violet} style={{ marginTop: 1, flexShrink: 0 }} />
-                      <div>
-                        <div style={{ fontSize: 10.5, fontWeight: 700, color: C.inkSoft, letterSpacing: 0.4 }}>
-                          AI-ASSISTED DRAFT {structured.confidence === "low" && "· low confidence, please refine"}
-                        </div>
-                        <div style={{ fontWeight: 700, fontSize: 13.5, marginTop: 3 }}>Requirement: {structured.requirementStatement}</div>
-                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
-                          <StatusChip label={structured.theme} small />
-                          {structured.capabilities.map((c) => (
-                            <span key={c} style={{ fontSize: 11, fontWeight: 600, color: C.inkSoft, border: `1px solid ${C.lineStrong}`, borderRadius: 20, padding: "2px 9px" }}>{c}</span>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-            {step === 1 && (
-              <>
-                <div style={{ background: C.violetSoft, border: `1px solid ${C.violet}22`, padding: "10px 12px", borderRadius: 5, fontSize: 12, marginBottom: 16 }}>
-                  <b>Review required.</b> These suggestions are editable drafting support, not an approval or a final decision.
-                </div>
-                <Field label="Requirement" hint="One clear technical sentence a startup can build against."><textarea style={{ ...inputStyle, height: 78 }} value={f.requirementStatement} onChange={set("requirementStatement")} placeholder="Describe the solution capability required." /></Field>
-                <Field label="Expected outcome" hint="Include a number and timeframe."><textarea style={{ ...inputStyle, height: 70 }} value={f.expectedOutcome} onChange={set("expectedOutcome")} placeholder="e.g. Reduce transfer delays by 30% within 6 months" /></Field>
-                <Field label="Constraints" hint="Existing systems, data, security, compliance or operational limits."><textarea style={{ ...inputStyle, height: 70 }} value={f.constraints} onChange={set("constraints")} placeholder="Legacy systems, data-sharing limits, procurement rules…" /></Field>
-                <Field label="Budget range"><input style={inputStyle} value={f.budget} onChange={set("budget")} placeholder="₹15–30 lakh" /></Field>
-                <Field label="Risk level">
-                  <select style={inputStyle} value={f.risk} onChange={set("risk")}>
-                    <option>Low</option><option>Medium</option><option>High</option>
-                  </select>
-                </Field>
-              </>
-            )}
-            {step === 2 && (
-              <>
-                <Field label="Pilot location"><input style={inputStyle} value={f.location} onChange={set("location")} placeholder="e.g. Pune & Nagpur (2 districts)" /></Field>
-                <Field label="Timeline"><input style={inputStyle} value={f.timeline} onChange={set("timeline")} placeholder="e.g. 4-month pilot, beginning January 2027" /></Field>
-                <Card style={{ background: C.paper, border: `1px dashed ${C.lineStrong}` }}>
-                  <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 6 }}>Suggested procurement pathway</div>
-                  <div style={{ fontSize: 12.5, color: C.inkSoft }}>Based on risk = {f.risk} and budget band entered → <b style={{ color: C.ink }}>Pilot-to-scale innovation procurement route</b> (sandbox contract, no full tender required pre-validation).</div>
-                </Card>
-              </>
-            )}
-            {step === 3 && (
-              <>
-                <div style={{ fontWeight: 700, marginBottom: 10 }}>Human review before publication</div>
-                {!structured?.requirementStatement && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, background: C.brassSoft, color: C.brass, padding: "8px 12px", borderRadius: 4, fontSize: 12, marginBottom: 14 }}>
-                    <AlertTriangle size={14} /> Structure and review the specification before submitting this challenge.
-                  </div>
-                )}
-                {structured?.requirementStatement && (
-                  <div style={{ marginBottom: 14, padding: 12, borderRadius: 6, background: C.violetSoft, border: `1px solid ${C.violet}22`, fontSize: 13 }}>
-                    <b>Requirement:</b> {f.requirementStatement} <span style={{ color: C.inkSoft }}>({f.theme})</span>
-                  </div>
-                )}
-                {Object.entries(f).filter(([key]) => key !== "theme").map(([k, v]) => (
-                  <div key={k} style={{ display: "flex", padding: "7px 0", borderTop: `1px solid ${C.line}`, fontSize: 12.8 }}>
-                    <div style={{ width: 170, color: C.inkSoft, textTransform: "capitalize" }}>{k.replace(/([A-Z])/g, " $1")}</div>
-                    <div style={{ fontWeight: 500 }}>{v || "—"}</div>
-                  </div>
-                ))}
-                {saveError && (
-                  <div style={{ marginTop: 12, fontSize: 12, color: C.rust }}>{saveError}</div>
-                )}
-              </>
-            )}
-
+            {step === 0 && <>
+              <div style={{ background: C.brassSoft, color: C.brass, padding: "8px 12px", borderRadius: 4, fontSize: 12, marginBottom: 16 }}><Info size={14} style={{ verticalAlign: "middle", marginRight: 6 }} />Write the operational problem in plain language. Generated wording remains editable and requires human approval.</div>
+              <Field label="Department"><input style={inputStyle} value={f.department} onChange={set("department")} disabled={role === "Government Official" && Boolean(verifiedDepartment)} /></Field>
+              <Field label="Challenge title"><input style={inputStyle} value={f.title} onChange={set("title")} /></Field>
+              <Field label="Sector / theme"><input style={inputStyle} value={f.sector} onChange={set("sector")} placeholder="e.g. GovTech, HealthTech" /></Field>
+              <Field label="Department objective"><textarea style={{ ...inputStyle, height: 70 }} value={f.objective} onChange={set("objective")} /></Field>
+              <Field label="Target beneficiaries"><input style={inputStyle} value={f.beneficiaries} onChange={set("beneficiaries")} /></Field>
+              <Field label="Raw problem statement"><textarea style={{ ...inputStyle, height: 92 }} value={f.rawProblemStatement} onChange={set("rawProblemStatement")} placeholder="What is going wrong today?" /></Field>
+              <Btn variant="secondary" small icon={Sparkles} onClick={generateRequirement} disabled={structuring}>{structuring ? "Structuring…" : structured ? "Structure again" : "Structure with AI"}</Btn>
+              {structureError && <div style={{ marginTop: 12, fontSize: 12, color: C.rust }}>{structureError}</div>}
+            </>}
+            {step === 1 && <>
+              <div style={{ background: C.violetSoft, padding: "10px 12px", borderRadius: 5, fontSize: 12, marginBottom: 16 }}><b>Drafting source: {engineLabel}.</b> Review and edit every generated field.</div>
+              <Field label="Technical requirement"><textarea style={{ ...inputStyle, height: 78 }} value={f.requirementStatement} onChange={set("requirementStatement")} /></Field>
+              <Field label="Measurable expected outcome" hint="Must include a number and timeframe."><textarea style={{ ...inputStyle, height: 78 }} value={f.expectedOutcome} onChange={set("expectedOutcome")} /></Field>
+              <Field label="Known constraints"><textarea style={{ ...inputStyle, height: 78 }} value={f.constraints} onChange={set("constraints")} /></Field>
+            </>}
+            {step === 2 && <>
+              <Field label="Pilot location"><input style={inputStyle} value={f.location} onChange={set("location")} /></Field>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <Field label="Minimum budget (INR)"><input type="number" min="0" step="1" style={inputStyle} value={f.budgetMin} onChange={set("budgetMin")} /></Field>
+                <Field label="Maximum budget (INR)"><input type="number" min="0" step="1" style={inputStyle} value={f.budgetMax} onChange={set("budgetMax")} /></Field>
+                <Field label="Pilot duration (months)"><input type="number" min="1" step="1" style={inputStyle} value={f.pilotDurationMonths} onChange={set("pilotDurationMonths")} /></Field>
+                <Field label="Currency"><input style={inputStyle} value="INR" disabled /></Field>
+                <Field label="Startup submission deadline"><input type="date" style={inputStyle} value={f.submissionDeadline} onChange={set("submissionDeadline")} /></Field>
+                <Field label="Expected pilot start"><input type="date" style={inputStyle} value={f.expectedPilotStartDate} onChange={set("expectedPilotStartDate")} /></Field>
+              </div>
+              <Card style={{ background: C.paper, border: `1px dashed ${C.lineStrong}` }}><b>Procurement pathway:</b> No route is inferred from budget alone. Complete the reviewed Procurement Pathway Template; an authorised officer makes the final selection.</Card>
+            </>}
+            {step === 3 && <>
+              <Field label="Primary KPI"><input style={inputStyle} value={f.primaryKpiName} onChange={set("primaryKpiName")} /></Field>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+                <Field label="Baseline"><input type="number" step="1" style={inputStyle} value={f.primaryKpiBaseline} onChange={set("primaryKpiBaseline")} /></Field>
+                <Field label="Target"><input type="number" step="1" style={inputStyle} value={f.primaryKpiTarget} onChange={set("primaryKpiTarget")} /></Field>
+                <Field label="Unit"><input style={inputStyle} value={f.primaryKpiUnit} onChange={set("primaryKpiUnit")} placeholder="%, days, cases" /></Field>
+              </div>
+              <Field label="Measurement method"><textarea style={{ ...inputStyle, height: 70 }} value={f.measurementMethod} onChange={set("measurementMethod")} /></Field>
+              <Field label="Evidence source"><textarea style={{ ...inputStyle, height: 70 }} value={f.evidenceSource} onChange={set("evidenceSource")} /></Field>
+              <Field label="Target date"><input type="date" style={inputStyle} value={f.targetDate} onChange={set("targetDate")} /></Field>
+              <Card style={{ background: C.paper, border: `1px dashed ${C.lineStrong}` }}><b>Risk status:</b> Provisional Medium until the versioned Risk Management Template is completed and independently reviewed.</Card>
+            </>}
+            {step === 4 && <>
+              <div style={{ fontWeight: 700, marginBottom: 10 }}>Author review before submission</div>
+              {Object.entries(f).map(([key, value]) => <div key={key} style={{ display: "flex", padding: "7px 0", borderTop: `1px solid ${C.line}`, fontSize: 12.5 }}><div style={{ width: 190, color: C.inkSoft, textTransform: "capitalize" }}>{key.replace(/([A-Z])/g, " $1")}</div><div style={{ fontWeight: 500, flex: 1 }}>{value === "" ? "—" : value}</div></div>)}
+              {formProblems.map((problem) => <div key={problem} style={{ marginTop: 8, color: C.rust, fontSize: 12 }}>{problem}</div>)}
+              {saveError && <div style={{ marginTop: 12, color: C.rust, fontSize: 12 }}>{saveError}</div>}
+            </>}
             <div style={{ display: "flex", justifyContent: "space-between", marginTop: 20, paddingTop: 16, borderTop: `1px solid ${C.line}` }}>
               <Btn variant="ghost" onClick={() => setStep(Math.max(0, step - 1))} disabled={step === 0}>Back</Btn>
-              {step < steps.length - 1
-                ? <Btn icon={ArrowRight} onClick={() => setStep(step + 1)}>Continue</Btn>
-                : <Btn variant="brass" icon={CheckCircle2} onClick={submitForReview} disabled={submitting || completeness < 100}>{submitting ? "Submitting…" : "Submit for human review"}</Btn>}
+              {step < steps.length - 1 ? <Btn icon={ArrowRight} onClick={() => setStep(step + 1)}>Continue</Btn> : <Btn variant="brass" icon={CheckCircle2} onClick={submitForReview} disabled={submitting || !ready}>{submitting ? "Submitting…" : sourceDraft?.status === "Changes Requested" ? "Resubmit corrected version" : "Submit for independent review"}</Btn>}
             </div>
           </Card>
         </div>
-
         <div>
           <Card style={{ marginBottom: 16, textAlign: "center" }}>
-            <div style={{ fontSize: 11.5, fontWeight: 700, color: C.inkSoft, marginBottom: 10 }}>COMPLETENESS SCORE</div>
-            <div style={{ position: "relative", width: 96, height: 96, margin: "0 auto" }}>
-              <svg width="96" height="96">
-                <circle cx="48" cy="48" r="40" stroke={C.line} strokeWidth="8" fill="none" />
-                <circle cx="48" cy="48" r="40" stroke={completeness > 60 ? C.teal : C.brass} strokeWidth="8" fill="none"
-                  strokeDasharray={251} strokeDashoffset={251 - (251 * completeness) / 100} strokeLinecap="round"
-                  transform="rotate(-90 48 48)" />
-              </svg>
-              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", ...serif, fontSize: 22, fontWeight: 600 }}>{completeness}%</div>
-            </div>
-            <div style={{ fontSize: 11.5, color: C.inkSoft, marginTop: 8 }}>Required fields completed. This is plain counting logic, not AI.</div>
-            <div style={{ marginTop: 12, fontSize: 11.5, color: saveState === "Saved locally" ? C.brass : C.teal, fontWeight: 600 }}>{saveState === "Saving" ? "Saving draft…" : `${saveState} · your history is retained`}</div>
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: C.inkSoft, marginBottom: 10 }}>COMPLETENESS</div>
+            <div style={{ ...serif, fontSize: 30, fontWeight: 600, color: ready ? C.teal : C.brass }}>{completeness}%</div>
+            <div style={{ fontSize: 11.5, color: C.inkSoft }}>Required fields plus deterministic validation. No AI decides readiness.</div>
+            <div style={{ marginTop: 12, fontSize: 11.5, color: saveState === "Saved locally" ? C.brass : C.teal, fontWeight: 600 }}>{saveState === "Saving" ? "Saving draft…" : `${saveState} · record v${draftVersion || 1}`}</div>
           </Card>
-          <Card>
-            <div style={{ fontWeight: 700, fontSize: 12.8, marginBottom: 8 }}>Templates in use</div>
-            {["Outcome-Based Problem Statement", "Risk Management Framework", "Procurement Pathway Selector"].map((t) => (
-              <div key={t} style={{ display: "flex", gap: 6, fontSize: 12, color: C.inkSoft, padding: "5px 0" }}>
-                <ScrollText size={13} color={C.brass} /> {t}
-              </div>
-            ))}
-          </Card>
+          <Card><div style={{ fontWeight: 700, fontSize: 12.8, marginBottom: 8 }}>Connected controls</div>{["Outcome-Based Problem Statement v2", "Risk assessment required before pilot", "Procurement pathway requires officer review", "KPI flows into pilot measurement"].map((label) => <div key={label} style={{ display: "flex", gap: 6, fontSize: 12, color: C.inkSoft, padding: "5px 0" }}><ScrollText size={13} color={C.brass} /> {label}</div>)}</Card>
         </div>
       </div>
     </div>

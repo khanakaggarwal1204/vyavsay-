@@ -4,7 +4,7 @@
 
 The Templates workspace replaces the previous static library. Seven versioned definitions drive the server validation and frontend fields. Express and the existing React/Vite frontend remain unchanged as the stack; no runtime dependencies were added.
 
-- Problem statement: structured fields, bounded budgets, required submission validation, independent review, and publication of a new approved problem into the existing challenge list. Linked existing challenges are snapshotted, not silently overwritten. Published problem records are immutable.
+- Problem statement (Template v2): the shared challenge schema captures the department, plain-language problem, editable technical requirement, measurable outcome, constraints, bounded budget, pilot dates, and a primary KPI with its baseline, target, method, evidence source, and target date. Submission validation, independent review, corrections, and publication are enforced. Linked existing challenges are snapshotted, not silently overwritten. Published problem records are immutable.
 - Evaluation: the existing `evaluation.js` categories and risk-adjusted weights are reused. Scoring remains in Evaluations; this library supplies the same reusable scoring sheet, not a competing scoring engine.
 - Pilot agreement: requires a real linked contract; snapshots its startup, challenge, evaluation score, duration, scope and milestone amounts. Editable acceptance/payment terms and IP selection require review. No signatures or legal clearance are implied.
 - Data/IP: three standard ownership options and a mandatory data schedule.

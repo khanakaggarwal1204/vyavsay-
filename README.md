@@ -57,8 +57,7 @@ lost during inter-department transfers" becomes "A secure digital
 document-tracking system with immutable audit trails and role-based access."
 The browser keeps a local recovery copy while the backend autosaves a durable
 private draft and time-stamped audit history. A draft progresses through
-**Draft → Under Review → Published**. The author edits and submits it for
-review; a Platform Admin must explicitly publish it before startups can see it.
+**Draft → Under Review → Changes Requested → Resubmitted → Approved → Published**. The author edits and submits it; a different Platform Admin records findings and must approve the exact version before publication. The form also captures a bounded budget, pilot dates, and a primary KPI with baseline, target, method, evidence source, and target date.
 
 ### Challenge-structuring providers
 

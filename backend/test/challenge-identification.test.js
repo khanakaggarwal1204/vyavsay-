@@ -16,11 +16,23 @@ const readyDraft = {
   rawProblemStatement: "Our files keep getting lost between departments.",
   beneficiaries: "Department staff and citizens waiting for a service.",
   location: "Pune district",
-  timeline: "Four-month pilot starting January 2027",
-  budget: "Rs. 10-15 lakh",
+  sector: "GovTech",
+  budgetMin: 1000000,
+  budgetMax: 1500000,
+  currency: "INR",
+  pilotDurationMonths: 4,
+  submissionDeadline: "2026-12-01",
+  expectedPilotStartDate: "2027-01-01",
   requirementStatement: "A secure digital document-tracking system with immutable audit trails and role-based access.",
   expectedOutcome: "Reduce untraceable transfers by 30% within 4 months.",
   constraints: "Use existing records systems and comply with data security rules.",
+  primaryKpiName: "Untraceable transfers",
+  primaryKpiBaseline: 100,
+  primaryKpiTarget: 70,
+  primaryKpiUnit: "cases per month",
+  measurementMethod: "Compare monthly transfer logs against missing-file reports.",
+  evidenceSource: "Department transfer register and incident log.",
+  targetDate: "2027-05-01",
 };
 
 test("challenge structuring produces editable requirement, measurable outcome and constraints", () => {
@@ -32,7 +44,7 @@ test("challenge structuring produces editable requirement, measurable outcome an
 });
 
 test("draft completeness is deterministic and review blocks incomplete or unmeasurable records", () => {
-  assert.deepEqual(draftCompleteness({}), { completed: 0, total: 11, percent: 0 });
+  assert.deepEqual(draftCompleteness({}), { completed: 0, total: 23, percent: 0, valid: false, problems: [] });
   assert.equal(draftCompleteness(readyDraft).percent, 100);
   assert.match(validateDraftForReview({ ...readyDraft, expectedOutcome: "Improve the service soon." }).error, /measurable number/i);
   assert.equal(validateDraftForReview(readyDraft), null);
