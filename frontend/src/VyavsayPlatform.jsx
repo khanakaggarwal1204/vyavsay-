@@ -2432,6 +2432,7 @@ function Marketplace({ role }) {
   const [startups, setStartups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [groupByField, setGroupByField] = useState(false);
 
   useEffect(() => {
     api.getStartups()
@@ -2448,6 +2449,18 @@ function Marketplace({ role }) {
       (activeTags.length === 0 || activeTags.some((t) => s.tags.includes(t)))
   );
 
+  // Field-wise segregation: group the filtered startups by their primary
+  // sector/domain (e.g. AgriTech, HealthTech, Mobility) so government
+  // officials/evaluators can browse startups organised by field rather than
+  // one flat list. `field` comes from the backend (derived from `sector`);
+  // fall back client-side for any older cached records that predate it.
+  const grouped = filtered.reduce((acc, s) => {
+    const field = s.field || (s.sector || "Other").split("·")[0].trim() || "Other";
+    (acc[field] ||= []).push(s);
+    return acc;
+  }, {});
+  const groupedEntries = Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b));
+
   function toggleShortlist(name, e) {
     if (e) e.stopPropagation();
     setShortlisted((cur) => ({ ...cur, [name]: !cur[name] }));
@@ -2463,6 +2476,15 @@ function Marketplace({ role }) {
         eyebrow="DISCOVER"
         title="Startup Marketplace"
         right={
+          <div style={{ display: "flex", gap: 8 }}>
+          <Btn
+            variant={groupByField ? "primary" : "secondary"}
+            icon={Layers}
+            small
+            onClick={() => setGroupByField((v) => !v)}
+          >
+            {groupByField ? "Grouped by field" : "Group by field"}
+          </Btn>
           <div style={{ position: "relative" }}>
             <Btn variant="secondary" icon={Filter} small onClick={() => setShowFilters((v) => !v)}>
               Domain · TRL · Budget · Recognition
@@ -2503,6 +2525,7 @@ function Marketplace({ role }) {
               </div>
             )}
           </div>
+          </div>
         }
       />
       {role === "Startup" && <StartupProfileEditor onSaved={(startup) => setStartups((current) => {
@@ -2512,11 +2535,11 @@ function Marketplace({ role }) {
       {error && <Card style={{ color: C.rust, marginBottom: 14 }}>Could not load the startup marketplace: {error}</Card>}
       {loading && <Card style={{ marginBottom: 14 }}>Loading verified startup profiles…</Card>}
       <input style={{ ...inputStyle, marginBottom: 18, maxWidth: 380 }} placeholder="Search startups…" value={q} onChange={(e) => setQ(e.target.value)} />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 14 }}>
-        {filtered.map((s) => {
+      {(() => {
+        const renderCard = (s) => {
           const isShortlisted = !!shortlisted[s.name];
           return (
-            <Card key={s.name} onClick={() => setSelected(s)}>
+            <Card key={s.id || s.name} onClick={() => setSelected(s)}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                 <div style={{ width: 38, height: 38, borderRadius: 6, background: C.navySoft, display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <Rocket size={17} color={C.ink} />
@@ -2546,8 +2569,28 @@ function Marketplace({ role }) {
               </div>
             </Card>
           );
-        })}
-      </div>
+        };
+
+        if (groupByField) {
+          return groupedEntries.map(([field, items]) => (
+            <div key={field} style={{ marginBottom: 24 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 800, color: C.ink }}>{field}</div>
+                <div style={{ fontSize: 11, color: C.inkSoft, background: C.navySoft, borderRadius: 20, padding: "1px 8px" }}>{items.length}</div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 14 }}>
+                {items.map(renderCard)}
+              </div>
+            </div>
+          ));
+        }
+
+        return (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 14 }}>
+            {filtered.map(renderCard)}
+          </div>
+        );
+      })()}
 
       {filtered.length === 0 && (
         <div style={{ textAlign: "center", color: C.inkSoft, fontSize: 13, padding: "40px 0" }}>

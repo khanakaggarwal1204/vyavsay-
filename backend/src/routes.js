@@ -67,10 +67,20 @@ function findStartup(db, id) {
   return db.startups.find((s) => s.id === id);
 }
 
+// Primary field/domain label used for grouping startups (e.g. the field-wise
+// segregated marketplace view). Derived from the leading segment of `sector`
+// (e.g. "AgriTech · AI/ML" -> "AgriTech"), falling back to the first tag.
+function primaryFieldFor(startup) {
+  const fromSector = (startup.sector || "").split("·")[0]?.trim();
+  if (fromSector) return fromSector;
+  return startup.tags?.[0] || "Other";
+}
+
 function publicStartupProfile(startup) {
   const { embedding, embeddingFingerprint, embeddingModel, embeddingDimensions, ownerUserId, ...safe } = startup;
   return {
     ...safe,
+    field: primaryFieldFor(startup),
     semanticIndexedAt: startup.embeddingUpdatedAt || null,
   };
 }
@@ -184,9 +194,26 @@ function decoratePilotDesign(pd, db) {
 router.get("/health", (_req, res) => res.json({ ok: true }));
 
 /* ------------------------------- Startups ------------------------------ */
-router.get("/startups", (_req, res) => {
+router.get("/startups", (req, res) => {
   const db = readDB();
-  res.json(db.startups.map(publicStartupProfile));
+  let startups = db.startups.map(publicStartupProfile);
+
+  if (req.query.field) {
+    const wanted = String(req.query.field).toLowerCase();
+    startups = startups.filter((s) => s.field.toLowerCase() === wanted);
+  }
+
+  // ?groupBy=field returns startups segregated into { groups: { <field>: [...] } }
+  // instead of a flat array, for field-wise views (e.g. the marketplace).
+  if (req.query.groupBy === "field") {
+    const groups = {};
+    for (const startup of startups) {
+      (groups[startup.field] ||= []).push(startup);
+    }
+    return res.json({ groupedBy: "field", groups });
+  }
+
+  res.json(startups);
 });
 
 router.get("/startups/me", requireRole("Startup"), (req, res) => {
