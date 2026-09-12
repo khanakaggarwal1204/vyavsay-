@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { api } from "./api.js";
 import { SAFE_GUIDE_AVATAR } from "./guideAsset.js";
+import { LANGUAGES, t } from "./i18n.js";
 
 /* ---------------------------------------------------------------------- */
 /*  DESIGN TOKENS                                                          */
@@ -124,6 +125,17 @@ const serif = { fontFamily: BODY_FONT, fontWeight: 900, letterSpacing: 0 };
 /* Used for IDs, codes and numeric data — Roboto with tabular figures, per govt SaaS numeral guidance. */
 const mono = { fontFamily: "Roboto, Arial, sans-serif", fontVariantNumeric: "tabular-nums", fontWeight: 500 };
 const tabular = { fontVariantNumeric: "tabular-nums" };
+
+function LanguageSelector({ language, onChange }) {
+  return (
+    <label title="Choose display language" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5, color: C.inkSoft, fontWeight: 700 }}>
+      <Globe size={14} aria-hidden="true" />
+      <select aria-label="Display language" value={language} onChange={(event) => onChange(event.target.value)} style={{ border: `1px solid ${C.line}`, borderRadius: 4, background: "#fff", color: C.ink, padding: "6px 7px", font: "inherit" }}>
+        {LANGUAGES.map((item) => <option key={item.code} value={item.code}>{item.label}</option>)}
+      </select>
+    </label>
+  );
+}
 
 /* ---------------------------------------------------------------------- */
 /*  LIFECYCLE                                                              */
@@ -521,15 +533,14 @@ const NAV = [
   { key: "validation", label: "Validation", icon: ShieldCheck },
   { key: "scaleup", label: "Scale-Up", icon: TrendingUp },
   { key: "templates", label: "Templates", icon: Library },
-  { key: "admin", label: "Admin", icon: Settings },
 ];
 
-const ROLES = ["Government Official", "Startup", "Expert Evaluator", "Validation Agency", "Platform Admin"];
+const ROLES = ["Government Official", "Startup", "Expert Evaluator", "Validation Agency"];
 
 /* ---------------------------------------------------------------------- */
 /*  ROLE-BASED ACCESS — every nav destination is explicitly allow-listed   */
-/*  per role. Platform Admin sees everything for oversight; every other    */
-/*  role only sees the workspaces relevant to it. This list is the single  */
+/*  Each role sees only the workspaces relevant to its responsibilities.    */
+/*  This list is the single                                             */
 /*  source of truth for both the sidebar (what's shown) and the router     */
 /*  (what's actually renderable) — see canAccess() below.                  */
 /* ---------------------------------------------------------------------- */
@@ -538,7 +549,6 @@ const NAV_BY_ROLE = {
   "Startup": ["dashboard", "challenges", "pilots", "contracts", "payments", "validation", "scaleup", "templates"],
   "Expert Evaluator": ["dashboard", "challenges", "evaluation", "templates"],
   "Validation Agency": ["dashboard", "validation", "scaleup", "templates"],
-  "Platform Admin": NAV.map((n) => n.key),
 };
 
 // Detail/flow views reachable from an allowed nav item but not in NAV itself.
@@ -740,7 +750,6 @@ function Overview({ onEnter }) {
               <div className="vyavsay-hero-logins" style={{ display: "flex", gap: 14, marginTop: 10 }}>
                 <span onClick={() => onEnter("Expert Evaluator")} style={{ fontSize: 11, color: C.blue, fontWeight: 700, cursor: "pointer" }}>Evaluator login →</span>
                 <span onClick={() => onEnter("Validation Agency")} style={{ fontSize: 11, color: C.blue, fontWeight: 700, cursor: "pointer" }}>Validation agency login →</span>
-                <span onClick={() => onEnter("Platform Admin")} style={{ fontSize: 11, color: C.blue, fontWeight: 700, cursor: "pointer" }}>Admin login →</span>
               </div>
             </div>
 
@@ -967,11 +976,11 @@ function Footer() {
 /*  AUTH GATE — sign in, or register with role-specific legitimacy checks. */
 /*  Startups: MCA-format CIN (+ optional DPIIT number for instant verify). */
 /*  Government officials: official email domain allow-list.               */
-/*  Expert Evaluator / Validation Agency / Platform Admin: admin-issued     */
-/*  invite code — these oversight roles aren't open self-signup.            */
+/*  Expert Evaluator / Validation Agency: pre-issued invite codes are      */
+/*  required because these oversight roles are not open self-signup.        */
 /*  See backend/src/auth.js.                                               */
 /* ---------------------------------------------------------------------- */
-const INVITE_ONLY_ROLES = ["Expert Evaluator", "Validation Agency", "Platform Admin"];
+const INVITE_ONLY_ROLES = ["Expert Evaluator", "Validation Agency"];
 
 function AuthGate({ initialMode = "login", initialRole = "Startup", nextView, onAuthenticated, onCancel }) {
   const [mode, setMode] = useState(initialMode);
@@ -1009,7 +1018,7 @@ function AuthGate({ initialMode = "login", initialRole = "Startup", nextView, on
       if (!/\.gov\.in$|\.nic\.in$/.test(email.toLowerCase())) return "Use your official government email address.";
     }
     if (INVITE_ONLY_ROLES.includes(role) && !(fields.inviteCode || "").trim()) {
-      return "An invite code from a Platform Admin is required for this role.";
+      return "A valid invitation code is required for this role.";
     }
     return null;
   }
@@ -1093,7 +1102,7 @@ function AuthGate({ initialMode = "login", initialRole = "Startup", nextView, on
           {mode === "register" && INVITE_ONLY_ROLES.includes(role) && (
             <>
               <Field label="Organization / affiliation"><input style={inputStyle} value={fields.organization || ""} onChange={set("organization")} /></Field>
-              <Field label="Invite code" hint="Issued by a Platform Admin — this role can't be self-registered without one.">
+              <Field label="Invite code" hint="This oversight role cannot be self-registered without an invitation code.">
                 <input style={inputStyle} value={fields.inviteCode || ""} onChange={set("inviteCode")} />
               </Field>
             </>
@@ -1125,6 +1134,12 @@ export default function App() {
   const [authUser, setAuthUser] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [authGate, setAuthGate] = useState(null); // null | { mode, role, nextView }
+  const [language, setLanguage] = useState(() => localStorage.getItem("vyavsay.language") || "en");
+
+  useEffect(() => {
+    localStorage.setItem("vyavsay.language", language);
+    document.documentElement.lang = language;
+  }, [language]);
 
   // Hydrate an existing session (httpOnly cookie) on load, if any.
   useEffect(() => {
@@ -1178,6 +1193,7 @@ export default function App() {
     return (
       <div style={{ background: C.paper, minHeight: "100vh", color: C.ink, fontFamily: BODY_FONT }}>
         <style>{FONT_IMPORT}</style>
+        <div style={{ position: "fixed", zIndex: 110, right: 18, top: 14 }}><LanguageSelector language={language} onChange={setLanguage} /></div>
         <Overview onEnter={requestEntry} />
         <VyavsayAssistant view="guest" avatarSrc={SAFE_GUIDE_AVATAR} role="Guest" />
         {authGate && (
@@ -1213,7 +1229,7 @@ export default function App() {
                   borderLeft: active ? `3px solid ${C.blue}` : "3px solid transparent",
                 }}>
                 <Icon size={15} />
-                {n.label}
+                {t(language, n.label)}
               </div>
             );
           })}
@@ -1232,10 +1248,11 @@ export default function App() {
         <header style={{ height: 64, borderBottom: `1px solid ${C.line}`, background: "rgba(255,255,255,0.92)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", padding: "0 22px", gap: 16, position: "sticky", top: 0, zIndex: 10 }}>
           <div style={{ flex: 1, maxWidth: 420, position: "relative" }}>
             <Search size={15} style={{ position: "absolute", left: 10, top: 10 }} color={C.inkSoft} />
-            <input placeholder="Search challenges, startups, departments…"
+            <input placeholder={t(language, "Search challenges, startups, departments…")}
               style={{ ...inputStyle, paddingLeft: 32, background: "#F4FAFF", border: `1px solid ${C.line}`, borderRadius: 999 }} />
           </div>
           <div style={{ flex: 1 }} />
+          <LanguageSelector language={language} onChange={setLanguage} />
           <Bell size={17} color={C.inkSoft} style={{ cursor: "pointer" }} />
           <div style={{ position: "relative" }}>
             <div onClick={() => { if (!["validation", "scaleup", "templates"].includes(view)) setRoleMenuOpen((s) => !s); }}
@@ -1259,7 +1276,7 @@ export default function App() {
                     </div>
                   )}
                 </div>
-                <div onClick={signOut} style={{ padding: "9px 12px", fontSize: 13, cursor: "pointer", color: C.rust, fontWeight: 600 }}>Sign out</div>
+                  <div onClick={signOut} style={{ padding: "9px 12px", fontSize: 13, cursor: "pointer", color: C.rust, fontWeight: 600 }}>{t(language, "Sign out")}</div>
               </div>
             )}
           </div>
@@ -1280,7 +1297,7 @@ export default function App() {
               {view === "dashboard" && <Dashboard role={role} name={authUser?.name} onOpenChallenge={goDetail} setView={setView} />}
               {view === "challenges" && <ChallengesList onOpen={goDetail} onCreate={() => { setEditingChallenge(null); setView("create-challenge"); }} />}
               {view === "challenge-detail" && <ChallengeDetail ch={selectedChallenge || CHALLENGES[0]} role={role} onBack={() => setView("challenges")} onChanged={(challenge) => setSelectedChallenge(challenge)} onEdit={(challenge) => { setEditingChallenge(challenge); setView("create-challenge"); }} />}
-              {view === "create-challenge" && <CreateChallenge role={role} userId={authUser?.id} verifiedDepartment={authUser?.profile?.department} initialDraft={editingChallenge} onDone={(newCh) => { setEditingChallenge(null); if (newCh) { setSelectedChallenge(newCh); setView("challenge-detail"); } else { setView("challenges"); } }} />}
+              {view === "create-challenge" && <CreateChallenge language={language} role={role} userId={authUser?.id} verifiedDepartment={authUser?.profile?.department} initialDraft={editingChallenge} onDone={(newCh) => { setEditingChallenge(null); if (newCh) { setSelectedChallenge(newCh); setView("challenge-detail"); } else { setView("challenges"); } }} />}
               {view === "marketplace" && <Marketplace role={role} />}
               {view === "evaluation" && <EvaluationWorkspace />}
               {view === "pilots" && <Pilots />}
@@ -1289,7 +1306,6 @@ export default function App() {
               {view === "validation" && <ValidationWorkspace onPayments={() => setView("payments")} />}
               {view === "scaleup" && <ScaleUpWorkspace onValidation={() => setView("validation")} />}
               {view === "templates" && <TemplatesWorkspace />}
-              {view === "admin" && <Admin />}
             </>
           )}
         </main>
@@ -1313,7 +1329,7 @@ function Unauthorized({ role, onBack }) {
       </div>
       <h2 style={{ ...serif, fontSize: 19, margin: "0 0 8px", color: C.ink }}>You don't have access to this</h2>
       <p style={{ fontSize: 13, color: C.inkSoft, lineHeight: 1.6, margin: "0 0 18px" }}>
-        This section isn't part of the {role} workspace. If you believe this is a mistake, contact a Platform Admin.
+        This section isn't part of the {role} workspace. If you believe this is a mistake, contact your department administrator.
       </p>
       <Btn onClick={onBack}>Back to your dashboard</Btn>
     </Card>
@@ -1524,38 +1540,9 @@ function ChallengesList({ onOpen, onCreate }) {
 /* ---------------------------------------------------------------------- */
 function ChallengeDetail({ ch, onBack, role, onChanged, onEdit }) {
   const [tab, setTab] = useState("Overview");
-  const [reviewFindings, setReviewFindings] = useState("");
-  const [reviewDecision, setReviewDecision] = useState(false);
-  const [publishing, setPublishing] = useState(false);
-  const [publishError, setPublishError] = useState(null);
   const [applying, setApplying] = useState(false);
   const [applicationMessage, setApplicationMessage] = useState(null);
-  const tabs = ["Overview", ...(["Government Official", "Platform Admin"].includes(role) ? ["AI Startup Discovery"] : []), "Eligibility Screening", "Expert Evaluation", "Data / IP & Security", "Submitted Ideas (14)", "Updates"];
-  async function reviewChallenge(decision) {
-    setReviewDecision(true);
-    setPublishError(null);
-    try {
-      const response = await api.reviewChallengeDraft(ch.id, ch.version, decision, reviewFindings);
-      onChanged(response.challenge);
-      setReviewFindings("");
-    } catch (error) {
-      setPublishError(error.message);
-    } finally {
-      setReviewDecision(false);
-    }
-  }
-  async function publishAfterReview() {
-    setPublishing(true);
-    setPublishError(null);
-    try {
-      const response = await api.publishChallengeDraft(ch.id, ch.version);
-      onChanged(response.challenge);
-    } catch (error) {
-      setPublishError(error.message);
-    } finally {
-      setPublishing(false);
-    }
-  }
+  const tabs = ["Overview", ...(role === "Government Official" ? ["AI Startup Discovery"] : []), "Eligibility Screening", "Expert Evaluation", "Data / IP & Security", "Submitted Ideas (14)", "Updates"];
   async function applyAsStartup() {
     setApplying(true);
     setApplicationMessage(null);
@@ -1644,33 +1631,14 @@ function ChallengeDetail({ ch, onBack, role, onChanged, onEdit }) {
                 {ch.expectedOutcome || ch.outcome || "Reduce time from challenge publication to pilot launch to under 30 days, with at least 80% of pilots reaching an independently validated performance report within the sanctioned pilot duration."}
               </p>
               {ch.constraints && <><div style={{ fontWeight: 700, marginTop: 14, marginBottom: 8 }}>Constraints</div><p style={{ fontSize: 13, color: C.inkSoft, lineHeight: 1.6 }}>{ch.constraints}</p></>}
+              {ch.sourceDocument && <div style={{ marginTop: 14, padding: "9px 10px", borderRadius: 5, background: C.paper, fontSize: 12, color: C.inkSoft }}><FileText size={13} style={{ verticalAlign: "middle", marginRight: 6 }} />Source document: <b>{ch.sourceDocument.name}</b> · {Math.ceil(ch.sourceDocument.bytes / 1024)} KB · retained in the challenge audit record.</div>}
             </Card>
             <AutomatedReviewCard report={ch.automatedReview} />
-            {["Under Review", "Ready for Confirmation"].includes(ch.status) && role === "Platform Admin" && (
-              <Card style={{ marginBottom: 16, border: `1px solid ${C.brass}66` }}>
-                <div style={{ fontWeight: 700, marginBottom: 6 }}>{ch.status === "Ready for Confirmation" ? "Authorised publication confirmation" : "Independent publication review"}</div>
-                <div style={{ fontSize: 12.5, color: C.inkSoft, marginBottom: 10 }}>{ch.status === "Ready for Confirmation" ? "Automated checks passed. Confirm the exact submitted version; the backend still prevents self-approval." : "Review the automated warnings and record specific findings. The backend prevents the challenge author from reviewing their own submission."}</div>
-                {ch.status === "Under Review" && <Field label="Review findings"><textarea style={{ ...inputStyle, height: 80 }} value={reviewFindings} onChange={(event) => setReviewFindings(event.target.value)} placeholder="Confirm the requirement, measurable outcome, KPI, budget and constraints, or explain required corrections." /></Field>}
-                <div style={{ display: "flex", gap: 8 }}>
-                  {ch.status === "Under Review" && <Btn variant="secondary" small onClick={() => reviewChallenge("changes_requested")} disabled={reviewDecision || reviewFindings.trim().length < 15}>Request corrections</Btn>}
-                  <Btn variant="brass" small icon={CheckCircle2} onClick={() => reviewChallenge("approved")} disabled={reviewDecision || (ch.status === "Under Review" && reviewFindings.trim().length < 15)}>{ch.status === "Ready for Confirmation" ? "Confirm reviewed version" : "Approve reviewed version"}</Btn>
-                </div>
-                {publishError && <div style={{ color: C.rust, fontSize: 12, marginTop: 8 }}>{publishError}</div>}
-              </Card>
-            )}
             {ch.status === "Changes Requested" && (
               <Card style={{ marginBottom: 16, border: `1px solid ${C.rust}55`, background: C.rustSoft }}>
-                <div style={{ fontWeight: 700, marginBottom: 6 }}>Corrections required</div>
-                <div style={{ fontSize: 12.5, marginBottom: 10 }}>{ch.review?.findings || "Review the record and submit a corrected version."}</div>
+                <div style={{ fontWeight: 700, marginBottom: 6 }}>Automated checks need corrections</div>
+                <div style={{ fontSize: 12.5, marginBottom: 10 }}>{ch.review?.findings || "Review the record and publish the corrected version."}</div>
                 {role === "Government Official" && <Btn small onClick={() => onEdit(ch)}>Open correction workspace</Btn>}
-              </Card>
-            )}
-            {ch.status === "Approved" && role === "Platform Admin" && (
-              <Card style={{ marginBottom: 16, border: `1px solid ${C.teal}55`, background: C.tealSoft }}>
-                <div style={{ fontWeight: 700, marginBottom: 6 }}>Approved for publication</div>
-                <div style={{ fontSize: 12.5, marginBottom: 10 }}>Review findings: {ch.review?.findings}</div>
-                <Btn variant="brass" small icon={CheckCircle2} onClick={publishAfterReview} disabled={publishing}>{publishing ? "Publishing…" : "Publish approved challenge"}</Btn>
-                {publishError && <div style={{ color: C.rust, fontSize: 12, marginTop: 8 }}>{publishError}</div>}
               </Card>
             )}
             <Card>
@@ -1868,7 +1836,7 @@ function StartupDiscoveryPanel({ ch, role }) {
                       <Globe size={13} /> {s.website.replace(/^https?:\/\//, "")}
                     </a>
                   )}
-                  {(["Government Official", "Platform Admin"].includes(role)) && <Btn
+                  {(role === "Government Official") && <Btn
                     small
                     variant={invited === "sent" ? "secondary" : "primary"}
                     style={{ marginLeft: "auto" }}
@@ -1957,7 +1925,7 @@ function EligibilityPanel({ ch, role }) {
                   {r.pass ? <CheckCircle2 size={13} /> : <X size={13} />} {r.label}
                 </div>
               ))}
-              {(["Government Official", "Platform Admin", "Startup"].includes(role)) && <Btn small variant="secondary" icon={RefreshCw} onClick={() => rescreen(id)} disabled={rescreening[id]} style={{ marginLeft: "auto" }}>{rescreening[id] ? "Screening…" : "Re-run screening"}</Btn>}
+              {(["Government Official", "Startup"].includes(role)) && <Btn small variant="secondary" icon={RefreshCw} onClick={() => rescreen(id)} disabled={rescreening[id]} style={{ marginLeft: "auto" }}>{rescreening[id] ? "Screening…" : "Re-run screening"}</Btn>}
             </div>
           </div>
         ))}
@@ -2220,8 +2188,9 @@ function SubmittedIdeasPanel() {
 /* ---------------------------------------------------------------------- */
 /*  CREATE CHALLENGE WIZARD                                                */
 /* ---------------------------------------------------------------------- */
-function CreateChallenge({ onDone, userId, role, verifiedDepartment, initialDraft = null }) {
-  const steps = ["Plain-language problem", "Structured specification", "Pilot and budget", "Measurement plan", "Human review"];
+function CreateChallenge({ onDone, userId, role, verifiedDepartment, initialDraft = null, language = "en" }) {
+  const tx = (value) => t(language, value);
+  const steps = ["Plain-language problem", "Structured specification", "Pilot and budget", "Measurement plan", "Publish"].map(tx);
   const storageKey = `vyavsay.challenge-draft.v2.${userId || "anonymous"}`;
   const emptyForm = {
     title: "", department: verifiedDepartment || "", sector: "", objective: "", beneficiaries: "", rawProblemStatement: "",
@@ -2255,6 +2224,8 @@ function CreateChallenge({ onDone, userId, role, verifiedDepartment, initialDraf
   const [structured, setStructured] = useState(cached?.structured || (sourceDraft?.draftingEngine ? { engine: sourceDraft.draftingEngine, model: sourceDraft.draftingModel, capabilities: sourceDraft.capabilities || [] } : null));
   const [structuring, setStructuring] = useState(false);
   const [structureError, setStructureError] = useState(null);
+  const [sourceDocument, setSourceDocument] = useState(sourceDraft?.sourceDocument || cached?.sourceDocument || null);
+  const [pdfImporting, setPdfImporting] = useState(false);
   const [saveState, setSaveState] = useState(draftId ? "Saved" : "Not saved");
   const [saveError, setSaveError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -2281,9 +2252,10 @@ function CreateChallenge({ onDone, userId, role, verifiedDepartment, initialDraf
     capabilities: structured?.capabilities || sourceDraft?.capabilities || [],
     draftingEngine: structured?.engine || sourceDraft?.draftingEngine || null,
     draftingModel: structured?.model || sourceDraft?.draftingModel || null,
+    sourceDocument,
   });
   const cache = (fields, nextId = draftIdRef.current, nextVersion = versionRef.current) =>
-    localStorage.setItem(storageKey, JSON.stringify({ draftId: nextId, version: nextVersion, fields, structured }));
+    localStorage.setItem(storageKey, JSON.stringify({ draftId: nextId, version: nextVersion, fields, structured, sourceDocument }));
 
   function saveDraft(force = false, fields = f) {
     const hasContent = Object.values(fields).some((value) => String(value ?? "").trim());
@@ -2340,12 +2312,51 @@ function CreateChallenge({ onDone, userId, role, verifiedDepartment, initialDraf
       setStep(1);
     } catch (error) {
       setStructureError(error.status === 401
-        ? "Your admin session expired. Sign in again, then retry Structure with AI."
+        ? "Your session expired. Sign in again, then retry Structure with AI."
         : error.status === 403
-          ? "Structure with AI is available only to a Government Official or Platform Admin. Switch to that browser session and try again."
+          ? "Structure with AI is available only to a Government Official. Switch to that browser session and try again."
         : error.message);
     } finally {
       setStructuring(false);
+    }
+  }
+
+  async function importPdf(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
+      setStructureError("Choose a PDF document.");
+      return;
+    }
+    if (file.size > 6 * 1024 * 1024) {
+      setStructureError("PDF must be 6 MB or smaller.");
+      return;
+    }
+    setPdfImporting(true);
+    setStructureError(null);
+    try {
+      const result = await api.structurePdfRequirement(file);
+      setStructured(result);
+      setSourceDocument(result.sourceDocument);
+      setF((current) => ({
+        ...current,
+        title: result.title || current.title,
+        department: result.department || current.department,
+        sector: result.sector || result.theme || current.sector,
+        objective: result.objective || current.objective,
+        beneficiaries: result.beneficiaries || current.beneficiaries,
+        location: result.location || current.location,
+        rawProblemStatement: result.documentSummary || current.rawProblemStatement,
+        requirementStatement: result.requirementStatement || current.requirementStatement,
+        expectedOutcome: result.expectedOutcome || current.expectedOutcome,
+        constraints: result.constraints || current.constraints,
+      }));
+      setStep(1);
+    } catch (error) {
+      setStructureError(error.message);
+    } finally {
+      setPdfImporting(false);
     }
   }
 
@@ -2354,8 +2365,8 @@ function CreateChallenge({ onDone, userId, role, verifiedDepartment, initialDraf
     setSaveError(null);
     try {
       await saveDraft(true, { ...f });
-      const response = await api.submitChallengeDraft(draftIdRef.current, versionRef.current);
-      localStorage.removeItem(storageKey);
+      const response = await api.publishChallengeDraft(draftIdRef.current, versionRef.current);
+      if (response.challenge.status === "Published") localStorage.removeItem(storageKey);
       onDone(response.challenge);
     } catch (error) {
       setSaveError(error.message);
@@ -2373,7 +2384,7 @@ function CreateChallenge({ onDone, userId, role, verifiedDepartment, initialDraf
   return (
     <div>
       <SectionTitle eyebrow="TEMPLATE 1 · CHALLENGE IDENTIFICATION" title={sourceDraft?.status === "Changes Requested" ? "Correct and resubmit the problem statement" : "Turn a complaint into a buildable challenge"} />
-      {sourceDraft?.review?.findings && <Card style={{ marginBottom: 16, border: `1px solid ${C.rust}55`, background: C.rustSoft }}><b>Reviewer corrections:</b> {sourceDraft.review.findings}</Card>}
+      {sourceDraft?.review?.findings && <Card style={{ marginBottom: 16, border: `1px solid ${C.rust}55`, background: C.rustSoft }}><b>Automated check notes:</b> {sourceDraft.review.findings}</Card>}
       <div className="challenge-identification-grid" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 300px", gap: 20 }}>
         <div>
           <div className="challenge-identification-steps" style={{ display: "flex", gap: 6, marginBottom: 18 }}>
@@ -2381,55 +2392,60 @@ function CreateChallenge({ onDone, userId, role, verifiedDepartment, initialDraf
           </div>
           <Card>
             {step === 0 && <>
-              <div style={{ background: C.brassSoft, color: C.brass, padding: "8px 12px", borderRadius: 4, fontSize: 12, marginBottom: 16 }}><Info size={14} style={{ verticalAlign: "middle", marginRight: 6 }} />Write the operational problem in plain language. Generated wording remains editable and requires human approval.</div>
-              <Field label="Department"><input style={inputStyle} value={f.department} onChange={set("department")} disabled={role === "Government Official" && Boolean(verifiedDepartment)} /></Field>
-              <Field label="Challenge title"><input style={inputStyle} value={f.title} onChange={set("title")} /></Field>
-              <Field label="Sector / theme"><input style={inputStyle} value={f.sector} onChange={set("sector")} placeholder="e.g. GovTech, HealthTech" /></Field>
-              <Field label="Department objective"><textarea style={{ ...inputStyle, height: 70 }} value={f.objective} onChange={set("objective")} /></Field>
-              <Field label="Target beneficiaries"><input style={inputStyle} value={f.beneficiaries} onChange={set("beneficiaries")} /></Field>
-              <Field label="Raw problem statement"><textarea style={{ ...inputStyle, height: 92 }} value={f.rawProblemStatement} onChange={set("rawProblemStatement")} placeholder="What is going wrong today?" /></Field>
-              <Btn variant="secondary" small icon={Sparkles} onClick={generateRequirement} disabled={structuring}>{structuring ? "Structuring…" : structured ? "Structure again" : "Structure with AI"}</Btn>
+              <div style={{ background: C.brassSoft, color: C.brass, padding: "8px 12px", borderRadius: 4, fontSize: 12, marginBottom: 16 }}><Info size={14} style={{ verticalAlign: "middle", marginRight: 6 }} />Write the operational problem in plain language or upload the source PDF. AI suggestions are always editable; the department official makes the final publication decision.</div>
+              <Field label={tx("Government document (PDF, optional)")} hint="Upload the legal or departmental note. Vyavsay extracts readable text, prepares a short summary, and pre-fills an editable challenge draft.">
+                <input type="file" accept="application/pdf,.pdf" style={inputStyle} onChange={importPdf} disabled={pdfImporting} />
+              </Field>
+              {pdfImporting && <div style={{ margin: "-6px 0 12px", color: C.teal, fontSize: 12 }}>Reading PDF and preparing an editable draft…</div>}
+              {sourceDocument && <div style={{ margin: "-4px 0 14px", padding: "8px 10px", borderRadius: 5, background: C.tealSoft, color: C.inkSoft, fontSize: 12 }}><FileText size={13} style={{ verticalAlign: "middle", marginRight: 6 }} />{sourceDocument.name} imported. Its source record will be linked to this challenge.</div>}
+              <Field label={tx("Department")}><input style={inputStyle} value={f.department} onChange={set("department")} disabled={role === "Government Official" && Boolean(verifiedDepartment)} /></Field>
+              <Field label={tx("Challenge title")}><input style={inputStyle} value={f.title} onChange={set("title")} /></Field>
+              <Field label={tx("Sector / theme")}><input style={inputStyle} value={f.sector} onChange={set("sector")} placeholder="e.g. GovTech, HealthTech" /></Field>
+              <Field label={tx("Department objective")}><textarea style={{ ...inputStyle, height: 70 }} value={f.objective} onChange={set("objective")} /></Field>
+              <Field label={tx("Target beneficiaries")}><input style={inputStyle} value={f.beneficiaries} onChange={set("beneficiaries")} /></Field>
+              <Field label={tx("Raw problem statement")}><textarea style={{ ...inputStyle, height: 92 }} value={f.rawProblemStatement} onChange={set("rawProblemStatement")} placeholder="What is going wrong today?" /></Field>
+              <Btn variant="secondary" small icon={Sparkles} onClick={generateRequirement} disabled={structuring}>{structuring ? "Structuring…" : structured ? tx("Structure again") : tx("Structure with AI")}</Btn>
               {structureError && <div style={{ marginTop: 12, fontSize: 12, color: C.rust }}>{structureError}</div>}
             </>}
             {step === 1 && <>
               <div style={{ background: C.violetSoft, padding: "10px 12px", borderRadius: 5, fontSize: 12, marginBottom: 16 }}><b>Drafting source: {engineLabel}.</b> Review and edit every generated field.</div>
-              <Field label="Technical requirement"><textarea style={{ ...inputStyle, height: 78 }} value={f.requirementStatement} onChange={set("requirementStatement")} /></Field>
-              <Field label="Measurable expected outcome" hint="Must include a number and timeframe."><textarea style={{ ...inputStyle, height: 78 }} value={f.expectedOutcome} onChange={set("expectedOutcome")} /></Field>
-              <Field label="Known constraints"><textarea style={{ ...inputStyle, height: 78 }} value={f.constraints} onChange={set("constraints")} /></Field>
+              <Field label={tx("Technical requirement")}><textarea style={{ ...inputStyle, height: 78 }} value={f.requirementStatement} onChange={set("requirementStatement")} /></Field>
+              <Field label={tx("Measurable expected outcome")} hint="Must include a number and timeframe."><textarea style={{ ...inputStyle, height: 78 }} value={f.expectedOutcome} onChange={set("expectedOutcome")} /></Field>
+              <Field label={tx("Known constraints")}><textarea style={{ ...inputStyle, height: 78 }} value={f.constraints} onChange={set("constraints")} /></Field>
             </>}
             {step === 2 && <>
-              <Field label="Pilot location"><input style={inputStyle} value={f.location} onChange={set("location")} /></Field>
+              <Field label={tx("Pilot location")}><input style={inputStyle} value={f.location} onChange={set("location")} /></Field>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                <Field label="Minimum budget (INR)"><input type="number" min="0" step="1" style={inputStyle} value={f.budgetMin} onChange={set("budgetMin")} /></Field>
-                <Field label="Maximum budget (INR)"><input type="number" min="0" step="1" style={inputStyle} value={f.budgetMax} onChange={set("budgetMax")} /></Field>
-                <Field label="Pilot duration (months)"><input type="number" min="1" step="1" style={inputStyle} value={f.pilotDurationMonths} onChange={set("pilotDurationMonths")} /></Field>
+                <Field label={tx("Minimum budget (INR)")}><input type="number" min="0" step="1" style={inputStyle} value={f.budgetMin} onChange={set("budgetMin")} /></Field>
+                <Field label={tx("Maximum budget (INR)")}><input type="number" min="0" step="1" style={inputStyle} value={f.budgetMax} onChange={set("budgetMax")} /></Field>
+                <Field label={tx("Pilot duration (months)")}><input type="number" min="1" step="1" style={inputStyle} value={f.pilotDurationMonths} onChange={set("pilotDurationMonths")} /></Field>
                 <Field label="Currency"><input style={inputStyle} value="INR" disabled /></Field>
-                <Field label="Startup submission deadline"><input type="date" style={inputStyle} value={f.submissionDeadline} onChange={set("submissionDeadline")} /></Field>
-                <Field label="Expected pilot start"><input type="date" style={inputStyle} value={f.expectedPilotStartDate} onChange={set("expectedPilotStartDate")} /></Field>
+                <Field label={tx("Startup submission deadline")}><input type="date" style={inputStyle} value={f.submissionDeadline} onChange={set("submissionDeadline")} /></Field>
+                <Field label={tx("Expected pilot start")}><input type="date" style={inputStyle} value={f.expectedPilotStartDate} onChange={set("expectedPilotStartDate")} /></Field>
               </div>
               <Card style={{ background: C.paper, border: `1px dashed ${C.lineStrong}` }}><b>Procurement pathway:</b> No route is inferred from budget alone. Complete the reviewed Procurement Pathway Template; an authorised officer makes the final selection.</Card>
             </>}
             {step === 3 && <>
-              <Field label="Primary KPI"><input style={inputStyle} value={f.primaryKpiName} onChange={set("primaryKpiName")} /></Field>
+              <Field label={tx("Primary KPI")}><input style={inputStyle} value={f.primaryKpiName} onChange={set("primaryKpiName")} /></Field>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-                <Field label="Baseline"><input type="number" step="1" style={inputStyle} value={f.primaryKpiBaseline} onChange={set("primaryKpiBaseline")} /></Field>
-                <Field label="Target"><input type="number" step="1" style={inputStyle} value={f.primaryKpiTarget} onChange={set("primaryKpiTarget")} /></Field>
-                <Field label="Unit"><input style={inputStyle} value={f.primaryKpiUnit} onChange={set("primaryKpiUnit")} placeholder="%, days, cases" /></Field>
+                <Field label={tx("Baseline")}><input type="number" step="1" style={inputStyle} value={f.primaryKpiBaseline} onChange={set("primaryKpiBaseline")} /></Field>
+                <Field label={tx("Target")}><input type="number" step="1" style={inputStyle} value={f.primaryKpiTarget} onChange={set("primaryKpiTarget")} /></Field>
+                <Field label={tx("Unit")}><input style={inputStyle} value={f.primaryKpiUnit} onChange={set("primaryKpiUnit")} placeholder="%, days, cases" /></Field>
               </div>
-              <Field label="Measurement method"><textarea style={{ ...inputStyle, height: 70 }} value={f.measurementMethod} onChange={set("measurementMethod")} /></Field>
-              <Field label="Evidence source"><textarea style={{ ...inputStyle, height: 70 }} value={f.evidenceSource} onChange={set("evidenceSource")} /></Field>
-              <Field label="Target date"><input type="date" style={inputStyle} value={f.targetDate} onChange={set("targetDate")} /></Field>
+              <Field label={tx("Measurement method")}><textarea style={{ ...inputStyle, height: 70 }} value={f.measurementMethod} onChange={set("measurementMethod")} /></Field>
+              <Field label={tx("Evidence source")}><textarea style={{ ...inputStyle, height: 70 }} value={f.evidenceSource} onChange={set("evidenceSource")} /></Field>
+              <Field label={tx("Target date")}><input type="date" style={inputStyle} value={f.targetDate} onChange={set("targetDate")} /></Field>
               <Card style={{ background: C.paper, border: `1px dashed ${C.lineStrong}` }}><b>Risk status:</b> Provisional Medium until the versioned Risk Management Template is completed and independently reviewed.</Card>
             </>}
             {step === 4 && <>
-              <div style={{ fontWeight: 700, marginBottom: 10 }}>Author review before submission</div>
+              <div style={{ fontWeight: 700, marginBottom: 10 }}>{tx("Final department review before publishing")}</div>
               {Object.entries(f).map(([key, value]) => <div key={key} style={{ display: "flex", padding: "7px 0", borderTop: `1px solid ${C.line}`, fontSize: 12.5 }}><div style={{ width: 190, color: C.inkSoft, textTransform: "capitalize" }}>{key.replace(/([A-Z])/g, " $1")}</div><div style={{ fontWeight: 500, flex: 1 }}>{value === "" ? "—" : value}</div></div>)}
               {formProblems.map((problem) => <div key={problem} style={{ marginTop: 8, color: C.rust, fontSize: 12 }}>{problem}</div>)}
               {saveError && <div style={{ marginTop: 12, color: C.rust, fontSize: 12 }}>{saveError}</div>}
             </>}
             <div style={{ display: "flex", justifyContent: "space-between", marginTop: 20, paddingTop: 16, borderTop: `1px solid ${C.line}` }}>
-              <Btn variant="ghost" onClick={() => setStep(Math.max(0, step - 1))} disabled={step === 0}>Back</Btn>
-              {step < steps.length - 1 ? <Btn icon={ArrowRight} onClick={() => setStep(step + 1)}>Continue</Btn> : <Btn variant="brass" icon={CheckCircle2} onClick={submitForReview} disabled={submitting || !ready}>{submitting ? "Submitting…" : sourceDraft?.status === "Changes Requested" ? "Resubmit corrected version" : "Submit for independent review"}</Btn>}
+              <Btn variant="ghost" onClick={() => setStep(Math.max(0, step - 1))} disabled={step === 0}>{tx("Back")}</Btn>
+              {step < steps.length - 1 ? <Btn icon={ArrowRight} onClick={() => setStep(step + 1)}>{tx("Continue")}</Btn> : <Btn variant="brass" icon={CheckCircle2} onClick={submitForReview} disabled={submitting || !ready}>{submitting ? "Publishing…" : sourceDraft?.status === "Changes Requested" ? "Publish corrected challenge" : tx("Publish challenge")}</Btn>}
             </div>
           </Card>
         </div>

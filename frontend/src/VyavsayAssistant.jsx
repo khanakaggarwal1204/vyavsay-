@@ -43,7 +43,7 @@ function replyFor(message, view) {
   if (text.includes("next") || text.includes("workflow"))
     return "The workflow is challenge, startup discovery, eligibility, evaluation, pilot design, milestone contracting, performance measurement, payment, independent validation, and finally a human-authorised scale-up decision.";
   if (text.includes("publish"))
-    return "Complete the Problem Statement fields, save the draft, submit it, and have a separate department reviewer approve it. Only then can the author publish a new challenge.";
+    return "Complete the Problem Statement fields, review the editable AI suggestions, and select Publish challenge. The system runs fixed completeness and quality checks, but the department official makes the final publication decision.";
   if (text.includes("security") || text.includes("cyber"))
     return "Before field or live access, the startup must provide evidence for encryption, hosting and data handling, and required certifications. Every control needs independent review, and expired or changed evidence blocks progression.";
   if (text.includes("procurement"))
