@@ -83,11 +83,24 @@ procurement decision.
 
 Open any challenge (Challenges → click a row) to see the other two:
 
-- **AI Startup Discovery** tab — calls `GET /api/challenges/:id/discovery`.
-  Scores every startup in the database against the challenge's sector/theme,
-  past government-pilot experience, and technology readiness, then shows the
-  shortlist. "Invite to apply" on a card calls
-  `POST /api/challenges/:id/applications` and creates a real application.
+- **AI Startup Discovery** tab — eligibility first filters profiles using
+  registration, DPIIT recognition, sector, risk controls, and minimum TRL.
+  Eligible profiles are then ranked using **60% stored Gemini semantic
+  similarity** and **40% deterministic, explainable evidence fit** (sector,
+  capability overlap, TRL, location, and prior government pilots). No model is
+  called while searching: vectors are generated after a meaningful startup
+  profile save or challenge publication, then compared locally with cosine
+  similarity. Missing vectors safely fall back to rules-only ranking.
+  Government users can invite an eligible startup via
+  `POST /api/challenges/:id/invitations`; an invitation is not an application.
+
+  This repository currently persists these vectors in its existing JSON data
+  store. A production Postgres deployment can move the same fields to pgvector
+  and its cosine index without changing the recommendation policy.
+
+  `GEMINI_API_KEY` is also used by the embedding job. Optional controls are
+  `DISCOVERY_EMBEDDING_MODEL` (default `gemini-embedding-001`) and
+  `DISCOVERY_EMBEDDING_DIMENSIONS` (default `768`).
 
 - **Eligibility Screening** tab — calls `GET /api/challenges/:id/applications`.
   Every application is run through a rule engine
@@ -112,6 +125,9 @@ Open any challenge (Challenges → click a row) to see the other two:
 |---|---|---|
 | GET | `/api/health` | Health check |
 | GET | `/api/startups` | List all startups |
+| GET | `/api/startups/me` | Signed-in startup's discovery profile |
+| POST | `/api/startups` | Create a signed-in startup's discovery profile; semantic indexing runs asynchronously. |
+| PATCH | `/api/startups/:id` | Update the profile owner/admin's record; refreshes the embedding only when discovery text changes. |
 | GET | `/api/challenges` | List all challenges |
 | GET | `/api/challenges/:id` | Get one challenge |
 | POST | `/api/requirements/structure` | Body containing the challenge fields — creates an auditable LLM drafting suggestion with Requirement, Expected Outcome and Constraints, with a deterministic fallback. |
@@ -120,7 +136,10 @@ Open any challenge (Challenges → click a row) to see the other two:
 | POST | `/api/challenge-drafts/:id/submit` | Validates all required fields and moves a Draft to Under Review. |
 | POST | `/api/challenge-drafts/:id/publish` | Platform Admin only: publishes an approved review record for startup visibility. |
 | POST | `/api/challenges` | Body `{ title, dept, budget, risk, theme, requirementStatement, capabilities, deadline, location }` — publish a new challenge |
-| GET | `/api/challenges/:id/discovery` | AI-matched, sorted startup shortlist |
+| GET | `/api/challenges/:id/discovery` | Government/admin-only hybrid semantic and rules-based startup shortlist. |
+| POST | `/api/challenges/:id/discovery/reindex` | Queue a refresh of stored semantic vectors for a published challenge and marketplace profiles. |
+| POST | `/api/challenges/:id/invitations` | Government/admin-only invitation for an eligible startup; does not create an application. |
+| GET | `/api/startup-invitations` | Signed-in startup's pending challenge invitations. |
 | GET | `/api/challenges/:id/applications` | Applications + live eligibility verdicts |
 | POST | `/api/challenges/:id/applications` | Body `{ "startupId": "st_..." }` — submit/invite, runs eligibility immediately |
 | GET | `/api/challenges/:id/rubric` | Risk-adjusted scoring-rubric weights for the challenge |

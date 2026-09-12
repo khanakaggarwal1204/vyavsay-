@@ -37,7 +37,13 @@ export const api = {
   submitChallengeDraft: (id) => request(`/challenge-drafts/${encodeURIComponent(id)}/submit`, { method: "POST", body: JSON.stringify({}) }),
   publishChallengeDraft: (id) => request(`/challenge-drafts/${encodeURIComponent(id)}/publish`, { method: "POST", body: JSON.stringify({}) }),
   getStartups: () => request("/startups"),
+  getMyStartup: () => request("/startups/me"),
+  createStartup: (payload) => request("/startups", { method: "POST", body: JSON.stringify(payload) }),
+  updateStartup: (id, payload) => request(`/startups/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  getStartupInvitations: () => request("/startup-invitations"),
   getDiscovery: (challengeId) => request(`/challenges/${challengeId}/discovery`),
+  refreshDiscoveryIndex: (challengeId) => request(`/challenges/${challengeId}/discovery/reindex`, { method: "POST", body: JSON.stringify({}) }),
+  inviteStartup: (challengeId, startupId) => request(`/challenges/${challengeId}/invitations`, { method: "POST", body: JSON.stringify({ startupId }) }),
   getApplications: (challengeId) => request(`/challenges/${challengeId}/applications`),
   applyToChallenge: (challengeId, startupId) =>
     request(`/challenges/${challengeId}/applications`, {

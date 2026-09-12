@@ -2,12 +2,14 @@ import { Router } from "express";
 import { randomUUID } from "node:crypto";
 import { readDB, writeDB, resetDB } from "./db.js";
 import { matchStartupsForChallenge } from "./matching.js";
+import { queueChallengeDiscoveryIndex, queueEmbeddingRefresh } from "./semanticDiscovery.js";
 import { runEligibilityCheck } from "./eligibility.js";
 import { structureRequirement } from "./structuring.js";
 import { structureWithLlm } from "./aiStructuring.js";
 import {
   challengeVisibleTo,
   draftCompleteness,
+  isPrivateChallenge,
   normaliseChallengeDraft,
   recordChallengeHistory,
   validateDraftForReview,
@@ -61,6 +63,52 @@ function requireRole(...roles) {
 
 function findStartup(db, id) {
   return db.startups.find((s) => s.id === id);
+}
+
+function publicStartupProfile(startup) {
+  const { embedding, embeddingFingerprint, embeddingModel, embeddingDimensions, ownerUserId, ...safe } = startup;
+  return {
+    ...safe,
+    semanticIndexedAt: startup.embeddingUpdatedAt || null,
+  };
+}
+
+function cleanStartupText(value, label, { required = false, max = 1500 } = {}) {
+  if (value == null) {
+    if (required) throw new Error(`${label} is required.`);
+    return "";
+  }
+  if (typeof value !== "string") throw new Error(`${label} must be text.`);
+  const cleaned = value.trim().replace(/\u0000/g, "");
+  if (required && !cleaned) throw new Error(`${label} is required.`);
+  if (cleaned.length > max) throw new Error(`${label} exceeds its ${max}-character limit.`);
+  return cleaned;
+}
+
+function normaliseStartupProfile(payload = {}, existing = {}) {
+  const tags = payload.tags ?? existing.tags ?? [];
+  if (!Array.isArray(tags) || tags.length < 1 || tags.length > 12 || tags.some((tag) => typeof tag !== "string" || !tag.trim() || tag.trim().length > 60)) {
+    throw new Error("Choose between 1 and 12 technology or sector tags.");
+  }
+  const trl = cleanStartupText(payload.trl ?? existing.trl, "Technology readiness level", { required: true, max: 30 });
+  if (!/^TRL [1-9]$/.test(trl)) throw new Error("Technology readiness level must be in the form TRL 1 through TRL 9.");
+  const pilots = payload.pilots ?? existing.pilots ?? 0;
+  if (!Number.isInteger(Number(pilots)) || Number(pilots) < 0 || Number(pilots) > 999) throw new Error("Past government pilots must be a whole number from 0 to 999.");
+
+  return {
+    name: cleanStartupText(payload.name ?? existing.name, "Startup name", { required: true, max: 180 }),
+    description: cleanStartupText(payload.description ?? existing.description, "Startup description", { required: true, max: 4000 }),
+    sector: cleanStartupText(payload.sector ?? existing.sector, "Sector", { required: true, max: 180 }),
+    tags: tags.map((tag) => tag.trim()),
+    trl,
+    loc: cleanStartupText(payload.location ?? payload.loc ?? existing.loc, "Location", { required: true, max: 180 }),
+    website: cleanStartupText(payload.website ?? existing.website, "Website", { max: 500 }) || null,
+    pilots: Number(pilots),
+  };
+}
+
+function canEditStartupProfile(user, startup) {
+  return user?.role === "Platform Admin" || (user?.role === "Startup" && startup.ownerUserId === user.id);
 }
 
 /** Attach the computed eligibility verdict to a raw application record. */
@@ -122,7 +170,63 @@ router.get("/health", (_req, res) => res.json({ ok: true }));
 /* ------------------------------- Startups ------------------------------ */
 router.get("/startups", (_req, res) => {
   const db = readDB();
-  res.json(db.startups);
+  res.json(db.startups.map(publicStartupProfile));
+});
+
+router.get("/startups/me", requireRole("Startup"), (req, res) => {
+  const db = readDB();
+  const startup = db.startups.find((record) => record.ownerUserId === req.user.id) || null;
+  res.json({ startup: startup ? publicStartupProfile(startup) : null });
+});
+
+router.post("/startups", requireRole("Startup"), (req, res) => {
+  const db = readDB();
+  if (db.startups.some((startup) => startup.ownerUserId === req.user.id)) {
+    return res.status(409).json({ error: "This account already has a startup discovery profile." });
+  }
+  let profile;
+  try {
+    profile = normaliseStartupProfile({ ...req.body, name: req.body?.name || req.user.profile?.companyName });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+  const startup = {
+    id: `st_${randomUUID().replaceAll("-", "").slice(0, 12)}`,
+    ...profile,
+    registered: true,
+    dpiit: Boolean(req.user.profile?.dpiitNumber),
+    recog: req.user.profile?.dpiitNumber ? "DPIIT Recognised" : "Pending Verification",
+    yearsActive: 0,
+    certifications: [],
+    rating: null,
+    badge: "Under Review",
+    cin: req.user.profile?.cin || null,
+    source: "Vyavsay startup profile",
+    ownerUserId: req.user.id,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  db.startups.push(startup);
+  writeDB(db);
+  queueEmbeddingRefresh("startup", startup.id);
+  res.status(201).json({ startup: publicStartupProfile(startup), semanticIndex: "refreshing" });
+});
+
+router.patch("/startups/:id", requireRole("Startup", "Platform Admin"), (req, res) => {
+  const db = readDB();
+  const startup = findStartup(db, req.params.id);
+  if (!startup) return res.status(404).json({ error: "Startup profile not found." });
+  if (!canEditStartupProfile(req.user, startup)) return res.status(403).json({ error: "You can only edit your own startup profile." });
+  let profile;
+  try {
+    profile = normaliseStartupProfile(req.body, startup);
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+  Object.assign(startup, profile, { updatedAt: new Date().toISOString() });
+  writeDB(db);
+  queueEmbeddingRefresh("startup", startup.id);
+  res.json({ startup: publicStartupProfile(startup), semanticIndex: "refreshing" });
 });
 
 /* ------------------------------ Challenges ------------------------------ */
@@ -285,6 +389,7 @@ router.post("/challenge-drafts/:id/publish", requireRole("Platform Admin"), (req
   challenge.publishedAt = new Date().toISOString();
   recordChallengeHistory(challenge, { actor: req.user, event: "published_after_human_review" });
   writeDB(db);
+  queueEmbeddingRefresh("challenge", challenge.id);
   res.json({ challenge });
 });
 
@@ -317,27 +422,79 @@ router.post("/challenges", requireRole("Government Official", "Platform Admin"),
 
   db.challenges.push(challenge);
   writeDB(db);
+  queueEmbeddingRefresh("challenge", challenge.id);
   res.status(201).json(challenge);
 });
 
 /* --------------------- Feature 1: AI Startup Discovery ------------------ */
 // Auto-shortlists startups from the database against a challenge's
 // sector/theme and requirements, instead of a department searching manually.
-router.get("/challenges/:id/discovery", (req, res) => {
+router.get("/challenges/:id/discovery", requireRole("Government Official", "Platform Admin"), (req, res) => {
   const db = readDB();
   const challenge = findChallenge(db, req.params.id);
   if (!challenge) return res.status(404).json({ error: "Challenge not found" });
+  if (isPrivateChallenge(challenge)) return res.status(409).json({ error: "Publish this challenge before running startup discovery." });
 
-  const matches = matchStartupsForChallenge(db.startups, challenge);
-  const shortlisted = matches.filter((m) => m.shortlisted);
+  const discovery = matchStartupsForChallenge(db.startups, challenge);
+  const shortlisted = discovery.matches.filter((m) => m.shortlisted);
 
   res.json({
     challengeId: challenge.id,
     theme: challenge.theme,
+    candidatesChecked: db.startups.length,
+    eligibleCount: discovery.matches.length,
+    excludedCount: discovery.excluded.length,
+    semanticReadyCount: discovery.semanticReady,
+    semanticStatus: discovery.semanticReady === discovery.matches.length ? "ready" : "partial",
     shortlistedCount: shortlisted.length,
-    message: `${shortlisted.length} startups shortlisted — sorted by sector match, past government experience, and technology fit.`,
-    matches,
+    message: `${shortlisted.length} startups shortlisted from ${discovery.matches.length} eligible profiles. Ranked with meaning-based fit and explainable evidence.`,
+    matches: discovery.matches.map(publicStartupProfile),
   });
+});
+
+router.post("/challenges/:id/discovery/reindex", requireRole("Government Official", "Platform Admin"), (req, res) => {
+  const db = readDB();
+  const challenge = findChallenge(db, req.params.id);
+  if (!challenge) return res.status(404).json({ error: "Challenge not found" });
+  if (isPrivateChallenge(challenge)) return res.status(409).json({ error: "Publish this challenge before building its discovery index." });
+  queueChallengeDiscoveryIndex(challenge.id);
+  res.json({ ok: true, scheduled: (db.startups || []).length + 1 });
+});
+
+router.post("/challenges/:id/invitations", requireRole("Government Official", "Platform Admin"), (req, res) => {
+  const db = readDB();
+  const challenge = findChallenge(db, req.params.id);
+  if (!challenge) return res.status(404).json({ error: "Challenge not found" });
+  if (isPrivateChallenge(challenge)) return res.status(409).json({ error: "Only published challenges can invite startups." });
+  const startup = findStartup(db, req.body?.startupId);
+  if (!startup) return res.status(400).json({ error: "Unknown startupId" });
+  const match = matchStartupsForChallenge([startup], challenge).matches[0];
+  if (!match) return res.status(422).json({ error: "This startup does not meet the discovery eligibility requirements." });
+  db.invitations = db.invitations || [];
+  const existing = db.invitations.find((invite) => invite.challengeId === challenge.id && invite.startupId === startup.id && invite.status === "Pending");
+  if (existing) return res.status(409).json({ error: "This startup has already been invited.", invitation: existing });
+  const invitation = {
+    id: `invite_${randomUUID()}`,
+    challengeId: challenge.id,
+    startupId: startup.id,
+    status: "Pending",
+    invitedBy: req.user.id,
+    invitedAt: new Date().toISOString(),
+  };
+  db.invitations.push(invitation);
+  recordChallengeHistory(challenge, { actor: req.user, event: "startup_invited", details: { startupId: startup.id } });
+  writeDB(db);
+  res.status(201).json({ invitation });
+});
+
+router.get("/startup-invitations", requireRole("Startup"), (req, res) => {
+  const db = readDB();
+  const startup = db.startups.find((record) => record.ownerUserId === req.user.id);
+  if (!startup) return res.json({ invitations: [] });
+  const invitations = (db.invitations || [])
+    .filter((invite) => invite.startupId === startup.id)
+    .map((invite) => ({ ...invite, challenge: findChallenge(db, invite.challengeId) ? { id: findChallenge(db, invite.challengeId).id, title: findChallenge(db, invite.challengeId).title, deadline: findChallenge(db, invite.challengeId).deadline } : null }));
+  res.json({ invitations });
 });
 
 /* --------------------- Feature 2: Auto-Eligibility Screening ------------ */
@@ -355,8 +512,8 @@ router.get("/challenges/:id/applications", (req, res) => {
   res.json(apps);
 });
 
-// Submits a new application (a startup applying, or a department inviting a
-// shortlisted startup) and immediately runs the eligibility check against it.
+// Submits a startup's own application and immediately runs the eligibility check.
+// Department invitations are stored separately in the invitation workflow above.
 router.post("/challenges/:id/applications", requireRole("Startup"), (req, res) => {
   const db = readDB();
   const challenge = findChallenge(db, req.params.id);

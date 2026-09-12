@@ -11,7 +11,7 @@ import {
   AlertTriangle, MapPin, Calendar, Building2, Users, Star, Download, Upload,
   Eye, X, ChevronRight, BadgeCheck, Landmark, FileCheck2, IndianRupee,
   ShieldAlert, UserCheck, Layers, ScrollText, Gauge, ArrowUpRight, Info,
-  ChevronLeft, Sparkles, Lock, Globe,
+  ChevronLeft, Sparkles, Lock, Globe, RefreshCw,
 } from "lucide-react";
 import { api } from "./api.js";
 import { SAFE_GUIDE_AVATAR } from "./guideAsset.js";
@@ -1256,7 +1256,7 @@ export default function App() {
               {view === "challenges" && <ChallengesList onOpen={goDetail} onCreate={() => setView("create-challenge")} />}
               {view === "challenge-detail" && <ChallengeDetail ch={selectedChallenge || CHALLENGES[0]} role={role} onBack={() => setView("challenges")} onPublished={(challenge) => setSelectedChallenge(challenge)} />}
               {view === "create-challenge" && <CreateChallenge role={role} onDone={(newCh) => { if (newCh) { setSelectedChallenge(newCh); setView("challenge-detail"); } else { setView("challenges"); } }} />}
-              {view === "marketplace" && <Marketplace />}
+              {view === "marketplace" && <Marketplace role={role} />}
               {view === "evaluation" && <EvaluationWorkspace />}
               {view === "pilots" && <Pilots />}
               {view === "contracts" && <Contracts onPayments={() => setView("payments")} />}
@@ -1490,7 +1490,7 @@ function ChallengeDetail({ ch, onBack, role, onPublished }) {
   const [reviewConfirmed, setReviewConfirmed] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState(null);
-  const tabs = ["Overview", "AI Startup Discovery", "Eligibility Screening", "Expert Evaluation", "Data / IP & Security", "Submitted Ideas (14)", "Updates"];
+  const tabs = ["Overview", ...(["Government Official", "Platform Admin"].includes(role) ? ["AI Startup Discovery"] : []), "Eligibility Screening", "Expert Evaluation", "Data / IP & Security", "Submitted Ideas (14)", "Updates"];
   async function publishAfterReview() {
     setPublishing(true);
     setPublishError(null);
@@ -1624,7 +1624,7 @@ function ChallengeDetail({ ch, onBack, role, onPublished }) {
         </div>
       )}
 
-      {tab === "AI Startup Discovery" && <StartupDiscoveryPanel ch={ch} />}
+      {tab === "AI Startup Discovery" && <StartupDiscoveryPanel ch={ch} role={role} />}
       {tab === "Eligibility Screening" && <EligibilityPanel ch={ch} />}
       {tab === "Expert Evaluation" && <ExpertEvaluationPanel ch={ch} />}
       {tab === "Data / IP & Security" && <DataIpPanel />}
@@ -1646,11 +1646,12 @@ function ChallengeDetail({ ch, onBack, role, onPublished }) {
 /*  STARTUP DISCOVERY PANEL — feature: automatic AI shortlisting           */
 /*  Live data from GET /api/challenges/:id/discovery                      */
 /* ---------------------------------------------------------------------- */
-function StartupDiscoveryPanel({ ch }) {
+function StartupDiscoveryPanel({ ch, role }) {
   const [expanded, setExpanded] = useState(null);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [refreshingIndex, setRefreshingIndex] = useState(false);
   const [inviteState, setInviteState] = useState({}); // startupId -> "sending" | "sent" | error message
 
   useEffect(() => {
@@ -1667,10 +1668,22 @@ function StartupDiscoveryPanel({ ch }) {
   async function invite(startupId) {
     setInviteState((s) => ({ ...s, [startupId]: "sending" }));
     try {
-      await api.applyToChallenge(ch.id, startupId);
+      await api.inviteStartup(ch.id, startupId);
       setInviteState((s) => ({ ...s, [startupId]: "sent" }));
     } catch (err) {
       setInviteState((s) => ({ ...s, [startupId]: err.status === 409 ? "sent" : "error" }));
+    }
+  }
+
+  async function refreshIndex() {
+    setRefreshingIndex(true);
+    setError(null);
+    try {
+      await api.refreshDiscoveryIndex(ch.id);
+      window.setTimeout(() => api.getDiscovery(ch.id).then(setData).catch((err) => setError(err.message)).finally(() => setRefreshingIndex(false)), 2500);
+    } catch (err) {
+      setError(err.message);
+      setRefreshingIndex(false);
     }
   }
 
@@ -1689,16 +1702,22 @@ function StartupDiscoveryPanel({ ch }) {
           <div>
             <div style={{ fontWeight: 700, fontSize: 13.5 }}>{data.message}</div>
             <div style={{ fontSize: 12, color: C.inkSoft, marginTop: 3 }}>
-              Matched automatically against "{data.theme}" instead of manual searching across the startup database.
+              {data.candidatesChecked} profiles checked · {data.excludedCount} filtered by hard eligibility · {data.semanticReadyCount}/{data.eligibleCount} semantic vectors ready.
             </div>
+            {data.semanticStatus !== "ready" && (
+              <div style={{ fontSize: 11.5, color: C.inkSoft, marginTop: 7 }}>Semantic indexing is still catching up. Rule-based matching remains available until every vector is stored.</div>
+            )}
           </div>
+          <Btn small variant="secondary" icon={RefreshCw} onClick={refreshIndex} disabled={refreshingIndex} style={{ marginLeft: "auto", flexShrink: 0 }}>
+            {refreshingIndex ? "Indexing..." : "Refresh semantic index"}
+          </Btn>
         </div>
       </Card>
 
       <Card noPad>
         <div style={{ padding: "14px 16px", fontWeight: 700, borderBottom: `1px solid ${C.line}`, display: "flex", justifyContent: "space-between" }}>
           <span>AI-matched startups</span>
-          <span style={{ fontSize: 11.5, color: C.inkSoft, fontWeight: 500 }}>Sector match · Govt. experience · Tech fit</span>
+          <span style={{ fontSize: 11.5, color: C.inkSoft, fontWeight: 500 }}>Eligibility filter · 60% meaning fit · 40% evidence fit</span>
         </div>
         {matches.map((s) => {
           const invited = inviteState[s.id];
@@ -1725,9 +1744,9 @@ function StartupDiscoveryPanel({ ch }) {
                   </div>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: 12.5, color: C.inkSoft }}>Match score</div>
-                    <div style={{ fontWeight: 700, color: s.shortlisted ? C.teal : C.inkSoft }}>{s.matchScore}%</div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: 12.5, color: C.inkSoft }}>Match score</div>
+                      <div style={{ fontWeight: 700, color: s.shortlisted ? C.teal : C.inkSoft }}>{s.matchScore}%</div>
                   </div>
                   {s.shortlisted ? <StatusChip label="Startup Shortlisted" small /> : <StatusChip label="Under Review" small />}
                   {expanded === s.id ? <ChevronUp size={16} color={C.inkSoft} /> : <ChevronDown size={16} color={C.inkSoft} />}
@@ -1744,6 +1763,14 @@ function StartupDiscoveryPanel({ ch }) {
                   <div style={{ fontSize: 12, color: C.inkSoft, display: "flex", alignItems: "center", gap: 4 }}>
                     <Gauge size={13} color={C.teal} /> Technology readiness {s.trl}
                   </div>
+                  <div style={{ fontSize: 12, color: C.inkSoft, display: "flex", alignItems: "center", gap: 4 }}>
+                    <Sparkles size={13} color={C.violet} /> {s.semanticScore == null ? "Semantic match awaiting index" : `Meaning fit ${s.semanticScore}%`} · Evidence fit {s.ruleScore}%
+                  </div>
+                  {s.reasons?.map((reason) => (
+                    <div key={reason} style={{ fontSize: 12, color: C.inkSoft, display: "flex", alignItems: "center", gap: 4 }}>
+                      <CheckCircle2 size={13} color={C.teal} /> {reason}
+                    </div>
+                  ))}
                   {s.cin && (
                     <div style={{ fontSize: 12, color: C.inkSoft, display: "flex", alignItems: "center", gap: 4 }}>
                       <ShieldCheck size={13} color={C.teal} /> CIN {s.cin}
@@ -1754,7 +1781,7 @@ function StartupDiscoveryPanel({ ch }) {
                       <Globe size={13} /> {s.website.replace(/^https?:\/\//, "")}
                     </a>
                   )}
-                  <Btn
+                  {(["Government Official", "Platform Admin"].includes(role)) && <Btn
                     small
                     variant={invited === "sent" ? "secondary" : "primary"}
                     style={{ marginLeft: "auto" }}
@@ -1762,7 +1789,7 @@ function StartupDiscoveryPanel({ ch }) {
                     onClick={(e) => { e.stopPropagation(); invite(s.id); }}
                   >
                     {invited === "sending" ? "Sending…" : invited === "sent" ? "Invited ✓" : invited === "error" ? "Retry invite" : "Invite to apply"}
-                  </Btn>
+                  </Btn>}
                 </div>
               )}
             </div>
@@ -2346,17 +2373,26 @@ function CreateChallenge({ onDone }) {
 /* ---------------------------------------------------------------------- */
 /*  MARKETPLACE                                                            */
 /* ---------------------------------------------------------------------- */
-function Marketplace() {
+function Marketplace({ role }) {
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState(null);
   const [shortlisted, setShortlisted] = useState({});
-  const [inviteState, setInviteState] = useState({});
   const [showFilters, setShowFilters] = useState(false);
   const [activeTags, setActiveTags] = useState([]);
+  const [startups, setStartups] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  const allTags = Array.from(new Set(STARTUPS.flatMap((s) => s.tags)));
+  useEffect(() => {
+    api.getStartups()
+      .then(setStartups)
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
 
-  const filtered = STARTUPS.filter(
+  const allTags = Array.from(new Set(startups.flatMap((s) => s.tags || [])));
+
+  const filtered = startups.filter(
     (s) =>
       s.name.toLowerCase().includes(q.toLowerCase()) &&
       (activeTags.length === 0 || activeTags.some((t) => s.tags.includes(t)))
@@ -2365,15 +2401,6 @@ function Marketplace() {
   function toggleShortlist(name, e) {
     if (e) e.stopPropagation();
     setShortlisted((cur) => ({ ...cur, [name]: !cur[name] }));
-  }
-
-  function sendInvite(name, e) {
-    if (e) e.stopPropagation();
-    if (inviteState[name] === "sending" || inviteState[name] === "sent") return;
-    setInviteState((cur) => ({ ...cur, [name]: "sending" }));
-    setTimeout(() => {
-      setInviteState((cur) => ({ ...cur, [name]: "sent" }));
-    }, 900);
   }
 
   function toggleTag(tag) {
@@ -2428,11 +2455,16 @@ function Marketplace() {
           </div>
         }
       />
+      {role === "Startup" && <StartupProfileEditor onSaved={(startup) => setStartups((current) => {
+        const index = current.findIndex((item) => item.id === startup.id);
+        return index === -1 ? [...current, startup] : current.map((item) => item.id === startup.id ? startup : item);
+      })} />}
+      {error && <Card style={{ color: C.rust, marginBottom: 14 }}>Could not load the startup marketplace: {error}</Card>}
+      {loading && <Card style={{ marginBottom: 14 }}>Loading verified startup profiles…</Card>}
       <input style={{ ...inputStyle, marginBottom: 18, maxWidth: 380 }} placeholder="Search startups…" value={q} onChange={(e) => setQ(e.target.value)} />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 14 }}>
         {filtered.map((s) => {
           const isShortlisted = !!shortlisted[s.name];
-          const invite = inviteState[s.name];
           return (
             <Card key={s.name} onClick={() => setSelected(s)}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -2445,7 +2477,7 @@ function Marketplace() {
               <div style={{ fontSize: 12, color: C.inkSoft, marginBottom: 8 }}>{s.sector}</div>
               <div style={{ display: "flex", gap: 12, fontSize: 11.5, color: C.inkSoft, marginBottom: 10 }}>
                 <span>{s.trl}</span><span>·</span><span>{s.pilots} past pilots</span><span>·</span>
-                <span style={{ display: "flex", alignItems: "center", gap: 3 }}><Star size={11} color={C.brass} fill={C.brass} /> {s.rating}</span>
+                {s.rating != null && <span style={{ display: "flex", alignItems: "center", gap: 3 }}><Star size={11} color={C.brass} fill={C.brass} /> {s.rating}</span>}
               </div>
               <div style={{ fontSize: 11.5, color: C.inkSoft, display: "flex", alignItems: "center", gap: 4, marginBottom: 12 }}>
                 <MapPin size={12} /> {s.loc} · {s.recog}
@@ -2460,15 +2492,7 @@ function Marketplace() {
                 >
                   {isShortlisted ? "Shortlisted" : "Shortlist"}
                 </Btn>
-                <Btn
-                  small
-                  variant={invite === "sent" ? "secondary" : "primary"}
-                  disabled={invite === "sending" || invite === "sent"}
-                  style={{ flex: 1, justifyContent: "center" }}
-                  onClick={(e) => sendInvite(s.name, e)}
-                >
-                  {invite === "sending" ? "Sending…" : invite === "sent" ? "Invited ✓" : "Invite to apply"}
-                </Btn>
+                <Btn small variant="primary" style={{ flex: 1, justifyContent: "center" }} onClick={() => setSelected(s)}>View profile</Btn>
               </div>
             </Card>
           );
@@ -2487,8 +2511,6 @@ function Marketplace() {
           onClose={() => setSelected(null)}
           shortlisted={!!shortlisted[selected.name]}
           onToggleShortlist={() => toggleShortlist(selected.name)}
-          inviteStatus={inviteState[selected.name]}
-          onInvite={() => sendInvite(selected.name)}
         />
       )}
     </div>
@@ -2496,9 +2518,89 @@ function Marketplace() {
 }
 
 /* ---------------------------------------------------------------------- */
+/*  STARTUP DISCOVERY PROFILE                                               */
+/* ---------------------------------------------------------------------- */
+function StartupProfileEditor({ onSaved }) {
+  const [profile, setProfile] = useState(null);
+  const [form, setForm] = useState({ name: "", description: "", sector: "", tags: "", trl: "TRL 5", location: "", website: "", pilots: 0 });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState(null);
+  const [invitations, setInvitations] = useState([]);
+
+  useEffect(() => {
+    api.getMyStartup()
+      .then(({ startup }) => {
+        setProfile(startup);
+        if (startup) setForm({
+          name: startup.name || "", description: startup.description || "", sector: startup.sector || "",
+          tags: (startup.tags || []).join(", "), trl: startup.trl || "TRL 5", location: startup.loc || "",
+          website: startup.website || "", pilots: startup.pilots || 0,
+        });
+      })
+      .catch((error) => setMessage({ type: "error", text: error.message }))
+      .finally(() => setLoading(false));
+    api.getStartupInvitations().then(({ invitations: records }) => setInvitations(records)).catch(() => {});
+  }, []);
+
+  function update(key) {
+    return (event) => setForm((current) => ({ ...current, [key]: event.target.value }));
+  }
+
+  async function save() {
+    setSaving(true);
+    setMessage(null);
+    try {
+      const payload = { ...form, pilots: Number(form.pilots), tags: form.tags.split(",").map((tag) => tag.trim()).filter(Boolean) };
+      const result = profile ? await api.updateStartup(profile.id, payload) : await api.createStartup(payload);
+      setProfile(result.startup);
+      onSaved(result.startup);
+      api.getStartupInvitations().then(({ invitations: records }) => setInvitations(records)).catch(() => {});
+      setMessage({ type: "success", text: "Profile saved. Semantic matching is refreshing in the background." });
+    } catch (error) {
+      setMessage({ type: "error", text: error.message });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card style={{ marginBottom: 18, border: `1px solid ${C.violet}33` }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start", flexWrap: "wrap", marginBottom: 14 }}>
+        <div>
+          <div style={{ fontSize: 11, color: C.violet, fontWeight: 800 }}>STARTUP DISCOVERY PROFILE</div>
+          <div style={{ fontSize: 13, color: C.inkSoft, marginTop: 3 }}>Describe what you build once. Vyavsay uses this profile to surface relevant published challenges.</div>
+        </div>
+        {profile?.semanticIndexedAt && <StatusChip label="Semantic index ready" small />}
+      </div>
+      {loading ? <div style={{ fontSize: 12.5, color: C.inkSoft }}>Loading your profile…</div> : <>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+          <Field label="Startup name"><input style={inputStyle} value={form.name} onChange={update("name")} /></Field>
+          <Field label="Sector"><input style={inputStyle} value={form.sector} onChange={update("sector")} placeholder="e.g. GovTech · Workflow automation" /></Field>
+          <Field label="Technology readiness"><select style={inputStyle} value={form.trl} onChange={update("trl")}>{[1,2,3,4,5,6,7,8,9].map((value) => <option key={value}>{`TRL ${value}`}</option>)}</select></Field>
+          <Field label="Location"><input style={inputStyle} value={form.location} onChange={update("location")} placeholder="e.g. Pune, Maharashtra" /></Field>
+          <Field label="Technology tags" hint="Separate tags with commas."><input style={inputStyle} value={form.tags} onChange={update("tags")} placeholder="AI/ML, IoT, Analytics" /></Field>
+          <Field label="Past government pilots"><input style={inputStyle} type="number" min="0" value={form.pilots} onChange={update("pilots")} /></Field>
+        </div>
+        <Field label="What does your startup build?" hint="Use plain language. This is used for meaning-based discovery."><textarea style={{ ...inputStyle, height: 82 }} value={form.description} onChange={update("description")} placeholder="Describe the problem you solve, your product, and the outcomes you deliver." /></Field>
+        <Field label="Website"><input style={inputStyle} value={form.website} onChange={update("website")} placeholder="https://example.com" /></Field>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <Btn small icon={CheckCircle2} onClick={save} disabled={saving}>{saving ? "Saving…" : "Save discovery profile"}</Btn>
+          {message && <span style={{ fontSize: 12, color: message.type === "error" ? C.rust : C.teal }}>{message.text}</span>}
+        </div>
+        {invitations.length > 0 && <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${C.line}` }}>
+          <div style={{ fontSize: 11, color: C.inkSoft, fontWeight: 800, marginBottom: 7 }}>CHALLENGE INVITATIONS</div>
+          {invitations.map((invite) => <div key={invite.id} style={{ fontSize: 12.5, color: C.ink, display: "flex", justifyContent: "space-between", gap: 10 }}><span>{invite.challenge?.title || "Published challenge"}</span><StatusChip label={invite.status} small /></div>)}
+        </div>}
+      </>}
+    </Card>
+  );
+}
+
+/* ---------------------------------------------------------------------- */
 /*  STARTUP DETAIL MODAL — opened by clicking a card in the Marketplace    */
 /* ---------------------------------------------------------------------- */
-function StartupDetailModal({ startup: s, onClose, shortlisted, onToggleShortlist, inviteStatus, onInvite }) {
+function StartupDetailModal({ startup: s, onClose, shortlisted, onToggleShortlist }) {
   return (
     <div
       onClick={onClose}
@@ -2561,7 +2663,8 @@ function StartupDetailModal({ startup: s, onClose, shortlisted, onToggleShortlis
             ))}
           </div>
 
-          {s.certifications.length > 0 && (
+          {s.description && <><div style={{ fontSize: 11.5, fontWeight: 700, color: C.inkSoft, marginBottom: 6 }}>SOLUTION DESCRIPTION</div><p style={{ fontSize: 13, color: C.inkSoft, lineHeight: 1.55, marginTop: 0 }}>{s.description}</p></>}
+          {(s.certifications || []).length > 0 && (
             <>
               <div style={{ fontSize: 11.5, fontWeight: 700, color: C.inkSoft, marginBottom: 6 }}>CERTIFICATIONS</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 6 }}>
@@ -2584,14 +2687,7 @@ function StartupDetailModal({ startup: s, onClose, shortlisted, onToggleShortlis
           >
             {shortlisted ? "Shortlisted" : "Shortlist"}
           </Btn>
-          <Btn
-            variant={inviteStatus === "sent" ? "secondary" : "primary"}
-            disabled={inviteStatus === "sending" || inviteStatus === "sent"}
-            style={{ flex: 1, justifyContent: "center" }}
-            onClick={onInvite}
-          >
-            {inviteStatus === "sending" ? "Sending…" : inviteStatus === "sent" ? "Invited ✓" : "Invite to apply"}
-          </Btn>
+          <div style={{ flex: 1, fontSize: 12, color: C.inkSoft, display: "flex", alignItems: "center" }}>Open a published challenge to invite an eligible startup.</div>
         </div>
       </div>
     </div>
