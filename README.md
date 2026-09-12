@@ -59,6 +59,25 @@ The browser keeps a local recovery copy while the backend autosaves a durable
 private draft and time-stamped audit history. A draft progresses through
 **Draft → Under Review → Published**. The author edits and submits it for
 review; a Platform Admin must explicitly publish it before startups can see it.
+
+### Challenge-structuring providers
+
+All keys are server-only Render environment variables; never add them to the
+frontend or commit them to Git. The provider order is **Gemini → Groq → Mistral
+→ Together → OpenRouter's model fallback chain → deterministic rules engine**.
+Unset keys are skipped.
+
+| Variable | Purpose |
+|---|---|
+| `GEMINI_API_KEY` | Primary structured drafting provider. |
+| `GROQ_API_KEY` | Fast direct fallback. |
+| `MISTRAL_API_KEY` | Optional direct fallback. |
+| `TOGETHER_API_KEY` | Optional direct fallback. |
+| `OPENROUTER_API_KEY` | One key for OpenRouter's multi-model fallback request. |
+| `STRUCTURING_OPENROUTER_MODELS` | Optional comma-separated priority list. Defaults to Gemini Flash, GPT-OSS 20B, then Llama 3.3 70B. |
+
+The deterministic rules engine is intentionally last: it maintains a useful,
+auditable drafting flow during provider outages or rate limits.
 The structuring engine is drafting support only and never makes a final
 procurement decision.
 

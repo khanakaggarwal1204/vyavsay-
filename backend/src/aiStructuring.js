@@ -82,12 +82,13 @@ async function useGemini(key, fields) {
   return { suggestion: validateStructuredSuggestion(parseJson(text)), provider: "gemini", model };
 }
 
-async function useOpenAiCompatible({ provider, url, key, model, fields, headers = {} }) {
+async function useOpenAiCompatible({ provider, url, key, model, models, fields, headers = {} }) {
+  const selectedModels = models?.filter(Boolean);
   const data = await requestJson(url, {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", ...headers },
     body: JSON.stringify({
-      model,
+      ...(selectedModels?.length ? { models: selectedModels } : { model }),
       temperature: 0.1,
       max_tokens: 700,
       response_format: { type: "json_object" },
@@ -97,8 +98,16 @@ async function useOpenAiCompatible({ provider, url, key, model, fields, headers 
   return {
     suggestion: validateStructuredSuggestion(parseJson(data.choices?.[0]?.message?.content)),
     provider,
-    model,
+    model: data.model || selectedModels?.[0] || model,
   };
+}
+
+function listFromEnvironment(name, fallback) {
+  const configured = process.env[name]
+    ?.split(",")
+    .map((model) => model.trim())
+    .filter(Boolean);
+  return configured?.length ? configured : fallback;
 }
 
 export async function structureWithLlm(fields) {
@@ -111,11 +120,29 @@ export async function structureWithLlm(fields) {
       model: process.env.STRUCTURING_GROQ_MODEL || process.env.GROQ_MODEL || "openai/gpt-oss-20b",
       fields,
     })),
+    process.env.MISTRAL_API_KEY && (() => useOpenAiCompatible({
+      provider: "mistral",
+      url: "https://api.mistral.ai/v1/chat/completions",
+      key: process.env.MISTRAL_API_KEY,
+      model: process.env.STRUCTURING_MISTRAL_MODEL || "mistral-small-latest",
+      fields,
+    })),
+    process.env.TOGETHER_API_KEY && (() => useOpenAiCompatible({
+      provider: "together",
+      url: "https://api.together.xyz/v1/chat/completions",
+      key: process.env.TOGETHER_API_KEY,
+      model: process.env.STRUCTURING_TOGETHER_MODEL || "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+      fields,
+    })),
     process.env.OPENROUTER_API_KEY && (() => useOpenAiCompatible({
       provider: "openrouter",
       url: "https://openrouter.ai/api/v1/chat/completions",
       key: process.env.OPENROUTER_API_KEY,
-      model: process.env.STRUCTURING_OPENROUTER_MODEL || process.env.OPENROUTER_MODEL || "openrouter/free",
+      models: listFromEnvironment("STRUCTURING_OPENROUTER_MODELS", [
+        process.env.STRUCTURING_OPENROUTER_MODEL || process.env.OPENROUTER_MODEL || "google/gemini-2.5-flash",
+        "openai/gpt-oss-20b",
+        "meta-llama/llama-3.3-70b-instruct",
+      ]),
       fields,
       headers: {
         "HTTP-Referer": process.env.PUBLIC_URL || "https://vyavsay.onrender.com",
