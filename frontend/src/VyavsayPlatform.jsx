@@ -1214,15 +1214,15 @@ export default function App() {
           <div style={{ flex: 1 }} />
           <Bell size={17} color={C.inkSoft} style={{ cursor: "pointer" }} />
           <div style={{ position: "relative" }}>
-            <div onClick={() => { if (!["payments", "validation", "scaleup", "templates"].includes(view)) setRoleMenuOpen((s) => !s); }}
+            <div onClick={() => { if (!["validation", "scaleup", "templates"].includes(view)) setRoleMenuOpen((s) => !s); }}
               style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer", border: `1px solid ${C.line}`, borderRadius: 4, padding: "6px 10px" }}>
               <div style={{ width: 22, height: 22, borderRadius: "50%", background: C.brassSoft, color: C.brass, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700 }}>
-                {["payments", "validation", "scaleup", "templates"].includes(view) ? "W" : role[0]}
+                {["validation", "scaleup", "templates"].includes(view) ? "W" : role[0]}
               </div>
-              <div style={{ fontSize: 12.5, fontWeight: 600 }}>{["payments", "validation", "scaleup", "templates"].includes(view) ? "Select account in workspace" : (authUser?.name || role)}</div>
-              {!["payments", "validation", "scaleup", "templates"].includes(view) && <ChevronDown size={14} color={C.inkSoft} />}
+              <div style={{ fontSize: 12.5, fontWeight: 600 }}>{["validation", "scaleup", "templates"].includes(view) ? "Select account in workspace" : (authUser?.name || role)}</div>
+              {!["validation", "scaleup", "templates"].includes(view) && <ChevronDown size={14} color={C.inkSoft} />}
             </div>
-            {!["payments", "validation", "scaleup", "templates"].includes(view) && roleMenuOpen && (
+            {!["validation", "scaleup", "templates"].includes(view) && roleMenuOpen && (
               <div style={{ position: "absolute", right: 0, top: 38, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 5, width: 236, boxShadow: "0 6px 18px rgba(20,33,61,0.1)", zIndex: 20 }}>
                 <div style={{ padding: "10px 12px", borderBottom: `1px solid ${C.line}` }}>
                   <div style={{ fontSize: 13, fontWeight: 700 }}>{authUser?.name || role}</div>
@@ -1261,7 +1261,7 @@ export default function App() {
               {view === "evaluation" && <EvaluationWorkspace />}
               {view === "pilots" && <Pilots />}
               {view === "contracts" && <Contracts onPayments={() => setView("payments")} />}
-              {view === "payments" && <PaymentsWorkspace />}
+              {view === "payments" && <PaymentsWorkspace platformRole={role} organisationName={role === "Startup" ? authUser?.profile?.companyName : role === "Government Official" ? authUser?.profile?.department : ""} />}
               {view === "validation" && <ValidationWorkspace onPayments={() => setView("payments")} />}
               {view === "scaleup" && <ScaleUpWorkspace onValidation={() => setView("validation")} />}
               {view === "templates" && <TemplatesWorkspace />}
