@@ -2228,7 +2228,9 @@ function CreateChallenge({ onDone }) {
       }));
       setStep(1);
     } catch (error) {
-      setStructureError(error.message);
+      setStructureError(error.status === 403
+        ? "Structure with AI is available only to a Government Official or Platform Admin. Switch to that browser session and try again."
+        : error.message);
     } finally {
       setStructuring(false);
     }
