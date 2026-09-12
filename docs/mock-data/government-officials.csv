@@ -1,0 +1,11 @@
+official_id,name,email,initial_password,role,department,designation,employee_id,organisation,location
+gov_mh_001,Aarav Deshmukh,aarav.deshmukh@maharashtra.gov.in,VyavsayDemo2026,Government Official,Department of General Administration,Deputy Secretary - Digital Governance,MH-DG-2026-0147,Government of Maharashtra,Mumbai Maharashtra
+gov_mh_002,Meera Kulkarni,meera.kulkarni@maharashtra.gov.in,VyavsayDemo2026,Government Official,Department of Agriculture,Joint Director - Agri Innovation,MH-AG-2026-0231,Government of Maharashtra,Pune Maharashtra
+gov_mh_003,Rohan Patil,rohan.patil@maharashtra.gov.in,VyavsayDemo2026,Government Official,Public Health Department,Deputy Director - Health Systems,MH-PH-2026-0314,Government of Maharashtra,Nagpur Maharashtra
+gov_mh_004,Nandini Iyer,nandini.iyer@maharashtra.gov.in,VyavsayDemo2026,Government Official,Transport Department,Assistant Commissioner - Mobility,MH-TR-2026-0448,Government of Maharashtra,Mumbai Maharashtra
+gov_mh_005,Vikram Joshi,vikram.joshi@maharashtra.gov.in,VyavsayDemo2026,Government Official,Water Resources Department,Executive Engineer - Digital Monitoring,MH-WR-2026-0567,Government of Maharashtra,Aurangabad Maharashtra
+gov_mh_006,Isha Menon,isha.menon@maharashtra.gov.in,VyavsayDemo2026,Government Official,Department of Skills Employment Entrepreneurship and Innovation,Programme Officer - Startup Partnerships,MH-SE-2026-0619,Government of Maharashtra,Mumbai Maharashtra
+gov_mh_007,Sameer Bhat,sameer.bhat@nic.in,VyavsayDemo2026,Government Official,National Informatics Centre,Technical Director,NIC-MH-2026-0712,National Informatics Centre,Mumbai Maharashtra
+gov_mh_008,Kavita Rao,kavita.rao@digitalindia.gov.in,VyavsayDemo2026,Government Official,Digital India Programme,Manager - Public Digital Platforms,DI-2026-0816,Digital India,New Delhi Delhi
+gov_mh_009,Aditya Shah,aditya.shah@maharashtra.gov.in,VyavsayDemo2026,Government Official,Urban Development Department,Deputy Commissioner - Smart Cities,MH-UD-2026-0935,Government of Maharashtra,Thane Maharashtra
+gov_mh_010,Neha Verma,neha.verma@gov.in,VyavsayDemo2026,Government Official,Department of Rural Development,Project Officer - Service Delivery,GOV-RD-2026-1042,Government of India,New Delhi Delhi
