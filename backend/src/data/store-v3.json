@@ -9003,6 +9003,65 @@
         "employeeId": null
       },
       "createdAt": "2026-09-12T13:44:33.413Z"
+    },
+    {
+      "id": "usr_seed_admin",
+      "role": "Platform Admin",
+      "name": "Priya Nair",
+      "email": "admin@vyavsay.gov.in",
+      "passwordHash": "7da3c62c0618c010156d6e4b7540389d:0d0abeb423cbb03a1eda5d5dabec880b8364c66398a21e65f588beb1cc15d87b1412b10798948556da02d77d1fcc9ae2567dbd2478ad21b99293375c0ac2417d",
+      "verificationStatus": "Verified",
+      "verificationNote": "Seed demo account.",
+      "profile": {
+        "organization": "Vyavsay Platform Team"
+      },
+      "createdAt": "2026-08-01T09:00:00.000Z"
+    },
+    {
+      "id": "usr_seed_govt",
+      "role": "Government Official",
+      "name": "Rohan Deshpande",
+      "email": "rohan.deshpande@maharashtra.gov.in",
+      "passwordHash": "b43b2950a7cc17d9f70c74991510bf16:3f4cf1dfd08555954702dccd0dd88b03a03b8dfe4bbb91700949c2aadbe5f66c9c7c43674ee90460e4878e85bb92e95657de4ac0348a42e2da311ec7b8427498",
+      "verificationStatus": "Verified",
+      "verificationNote": "Auto-verified: registered with an official government email domain.",
+      "profile": {
+        "department": "Skills, Employment & Innovation",
+        "designation": "Deputy Secretary",
+        "employeeId": "MH-IAS-2291"
+      },
+      "createdAt": "2026-08-01T09:00:00.000Z"
+    },
+    {
+      "id": "usr_seed_startup",
+      "role": "Startup",
+      "name": "Ananya Kulkarni",
+      "email": "ananya@tracknova.in",
+      "passwordHash": "d4b541d55ee95cabc55cb2ff22ae6500:e8586a6f9946e9d4efeffca66e61a9d674843f317486a0ffcea5580b89786349e5e7daf8ea999005b68504c33673d706eade4d368307bf3010a322f8b68ca26a",
+      "verificationStatus": "Verified",
+      "verificationNote": "Auto-verified: valid CIN format and DPIIT recognition number on file.",
+      "profile": {
+        "companyName": "TrackNova",
+        "cin": "U72900MH2019PTC123456",
+        "dpiitNumber": "DIPP123456",
+        "sector": "Transport · IoT",
+        "website": null
+      },
+      "createdAt": "2026-08-01T09:00:00.000Z"
+    },
+    {
+      "id": "usr_f1f669ee-ad61-4255-a50c-59f8e62b86d5",
+      "role": "Expert Evaluator",
+      "name": "Khanak Aggarwal",
+      "email": "khanak123@gmail.com",
+      "passwordHash": "7302559e815390386503a88276ead8e9:789d36f5ad340e866ffa128bc847126ad1cce6c322c04fcbc3c0a0ed296e67ef92dc460da3a540f1243af7f5fff9dd3d12efadf96778200e357c51ba586392aa",
+      "verificationStatus": "Verified",
+      "verificationNote": "Auto-verified: registered with a valid Expert Evaluator invite code.",
+      "profile": {
+        "organization": "government of india ",
+        "inviteCode": "EVAL-DEMO1"
+      },
+      "createdAt": "2026-09-12T14:21:01.420Z"
     }
   ],
   "authAudit": [
@@ -9041,14 +9100,61 @@
       "email": "khanak@maharashtra.gov.in",
       "rememberMe": true,
       "at": "2026-09-12T13:46:29.836Z"
+    },
+    {
+      "id": "aa_50f034ea-8ba8-4b17-aa15-82b125515cac",
+      "type": "login_failed",
+      "email": "khanak123@gmail.com",
+      "at": "2026-09-12T14:06:46.442Z"
+    },
+    {
+      "id": "aa_9ec2e776-c894-4157-bcc3-7f1506f8ab3a",
+      "type": "register",
+      "userId": "usr_f1f669ee-ad61-4255-a50c-59f8e62b86d5",
+      "role": "Expert Evaluator",
+      "email": "khanak123@gmail.com",
+      "verificationStatus": "Verified",
+      "at": "2026-09-12T14:21:01.420Z"
+    },
+    {
+      "id": "aa_c76085e3-ea8c-499d-973c-2b3172b50def",
+      "type": "login",
+      "userId": "usr_f997f4c5-03f2-4d39-b74f-0eee647d574b",
+      "role": "Government Official",
+      "email": "khanak@maharashtra.gov.in",
+      "rememberMe": true,
+      "at": "2026-09-12T14:21:22.134Z"
     }
   ],
   "sessions": [
     {
-      "token": "81a9a0fe-2cc9-4cbd-8258-201511246911",
+      "token": "c7dcd316-2b53-47ea-a843-922a578e8621",
       "userId": "usr_f997f4c5-03f2-4d39-b74f-0eee647d574b",
       "rememberMe": true,
-      "expiresAt": "2027-09-12T13:46:29.836Z"
+      "expiresAt": "2027-09-12T14:21:22.134Z"
+    }
+  ],
+  "inviteCodes": [
+    {
+      "code": "EVAL-DEMO1",
+      "role": "Expert Evaluator",
+      "issuedBy": "usr_seed_admin",
+      "issuedAt": "2026-08-01T09:00:00.000Z",
+      "usedBy": "usr_f1f669ee-ad61-4255-a50c-59f8e62b86d5"
+    },
+    {
+      "code": "VALID-DEMO1",
+      "role": "Validation Agency",
+      "issuedBy": "usr_seed_admin",
+      "issuedAt": "2026-08-01T09:00:00.000Z",
+      "usedBy": null
+    },
+    {
+      "code": "ADMIN-DEMO1",
+      "role": "Platform Admin",
+      "issuedBy": "usr_seed_admin",
+      "issuedAt": "2026-08-01T09:00:00.000Z",
+      "usedBy": null
     }
   ]
 }
