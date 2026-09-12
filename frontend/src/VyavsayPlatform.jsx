@@ -3,7 +3,7 @@ import PaymentsWorkspace from "./PaymentsWorkspace.jsx";
 import ValidationWorkspace from "./ValidationWorkspace.jsx";
 import ScaleUpWorkspace from "./ScaleUpWorkspace.jsx";
 import VyavsayAssistant from "./VyavsayAssistant.jsx";
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import {
   LayoutDashboard, Target, Rocket, FileText, ClipboardCheck, FlaskConical,
   FileSignature, Wallet, ShieldCheck, TrendingUp, Library, Settings, Search,
@@ -51,6 +51,9 @@ const FONT_IMPORT = `@import url('https://fonts.googleapis.com/css2?family=Noto+
 }
 .vyavsay-solve-card:hover { transform: translateY(-2px); box-shadow: 0 16px 34px rgba(6,48,92,0.12) !important; }
 @media (max-width: 760px) {
+  .challenge-identification-grid { grid-template-columns: 1fr !important; }
+  .challenge-identification-steps { overflow-x: auto; padding-bottom: 4px; }
+  .challenge-identification-steps > * { min-width: 130px; flex: 0 0 auto !important; }
   .vyavsay-schemes-grid { grid-template-columns: 1fr !important; }
   .vyavsay-solve-grid { grid-template-columns: 1fr !important; }
   .vyavsay-solve-accent { opacity: 0.055 !important; transform: scale(0.78); }
@@ -78,7 +81,7 @@ const tabular = { fontVariantNumeric: "tabular-nums" };
 /*  LIFECYCLE                                                              */
 /* ---------------------------------------------------------------------- */
 const LIFECYCLE = [
-  "Draft Challenge", "Under Review", "Published", "Applications Open",
+  "Draft", "Draft Challenge", "Under Review", "Published", "Applications Open",
   "Eligibility Screening", "Expert Evaluation", "Startup Shortlisted",
   "Pilot Design", "Contracting", "Pilot Active", "Milestone Review",
   "Payment Processing", "Independent Validation", "Scale-Up Review",
@@ -98,7 +101,7 @@ const PUBLIC_PATHWAY_STAGES = [
 ];
 
 const PUBLIC_PATHWAY_GROUPS = [
-  ["Draft Challenge", "Under Review", "Published"],
+  ["Draft", "Draft Challenge", "Under Review", "Published"],
   ["Applications Open"],
   ["Eligibility Screening"],
   ["Expert Evaluation"],
@@ -110,6 +113,7 @@ const PUBLIC_PATHWAY_GROUPS = [
 ];
 
 const STATUS_COLOR = {
+  "Draft": ["#8A8D94", "#EDEDE9"],
   "Draft Challenge": ["#8A8D94", "#EDEDE9"],
   "Under Review": [C.brass, C.brassSoft],
   "Published": [C.teal, C.tealSoft],
@@ -1103,8 +1107,8 @@ export default function App() {
             <>
               {view === "dashboard" && <Dashboard role={role} name={authUser?.name} onOpenChallenge={goDetail} setView={setView} />}
               {view === "challenges" && <ChallengesList onOpen={goDetail} onCreate={() => setView("create-challenge")} />}
-              {view === "challenge-detail" && <ChallengeDetail ch={selectedChallenge || CHALLENGES[0]} onBack={() => setView("challenges")} />}
-              {view === "create-challenge" && <CreateChallenge onDone={(newCh) => { if (newCh) { setSelectedChallenge(newCh); setView("challenge-detail"); } else { setView("challenges"); } }} />}
+              {view === "challenge-detail" && <ChallengeDetail ch={selectedChallenge || CHALLENGES[0]} role={role} onBack={() => setView("challenges")} onPublished={(challenge) => setSelectedChallenge(challenge)} />}
+              {view === "create-challenge" && <CreateChallenge role={role} onDone={(newCh) => { if (newCh) { setSelectedChallenge(newCh); setView("challenge-detail"); } else { setView("challenges"); } }} />}
               {view === "marketplace" && <Marketplace />}
               {view === "evaluation" && <EvaluationWorkspace />}
               {view === "pilots" && <Pilots />}
@@ -1334,9 +1338,24 @@ function ChallengesList({ onOpen, onCreate }) {
 /* ---------------------------------------------------------------------- */
 /*  CHALLENGE DETAIL                                                       */
 /* ---------------------------------------------------------------------- */
-function ChallengeDetail({ ch, onBack }) {
+function ChallengeDetail({ ch, onBack, role, onPublished }) {
   const [tab, setTab] = useState("overview");
+  const [reviewConfirmed, setReviewConfirmed] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [publishError, setPublishError] = useState(null);
   const tabs = ["Overview", "AI Startup Discovery", "Eligibility Screening", "Expert Evaluation", "Data / IP & Security", "Submitted Ideas (14)", "Updates"];
+  async function publishAfterReview() {
+    setPublishing(true);
+    setPublishError(null);
+    try {
+      const response = await api.publishChallengeDraft(ch.id);
+      onPublished(response.challenge);
+    } catch (error) {
+      setPublishError(error.message);
+    } finally {
+      setPublishing(false);
+    }
+  }
   return (
     <div>
       <div onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12.5, color: C.inkSoft, cursor: "pointer", marginBottom: 12, fontWeight: 600 }}>
@@ -1357,7 +1376,7 @@ function ChallengeDetail({ ch, onBack }) {
             <StatusChip label={ch.status} />
             <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
               <Btn variant="secondary" small>Save / Watch</Btn>
-              <Btn small>Apply as Startup</Btn>
+              {ch.status === "Published" || ch.status === "Applications Open" ? <Btn small>Apply as Startup</Btn> : <Btn small disabled>Not visible to startups</Btn>}
             </div>
           </div>
         </div>
@@ -1406,10 +1425,19 @@ function ChallengeDetail({ ch, onBack }) {
               )}
               <div style={{ fontWeight: 700, marginTop: 14, marginBottom: 8 }}>Expected measurable outcome</div>
               <p style={{ fontSize: 13, color: C.inkSoft, lineHeight: 1.6 }}>
-                Reduce time from challenge publication to pilot launch to under 30 days, with ≥ 80% of pilots reaching
-                an independently validated performance report within the sanctioned pilot duration.
+                {ch.expectedOutcome || ch.outcome || "Reduce time from challenge publication to pilot launch to under 30 days, with at least 80% of pilots reaching an independently validated performance report within the sanctioned pilot duration."}
               </p>
+              {ch.constraints && <><div style={{ fontWeight: 700, marginTop: 14, marginBottom: 8 }}>Constraints</div><p style={{ fontSize: 13, color: C.inkSoft, lineHeight: 1.6 }}>{ch.constraints}</p></>}
             </Card>
+            {ch.status === "Under Review" && role === "Platform Admin" && (
+              <Card style={{ marginBottom: 16, border: `1px solid ${C.brass}66` }}>
+                <div style={{ fontWeight: 700, marginBottom: 6 }}>Human publication review</div>
+                <div style={{ fontSize: 12.5, color: C.inkSoft, marginBottom: 10 }}>Confirm the requirement, outcome and constraints have been reviewed before making this challenge visible to startups.</div>
+                <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12.5, marginBottom: 12 }}><input type="checkbox" checked={reviewConfirmed} onChange={(event) => setReviewConfirmed(event.target.checked)} /> I have completed the human review.</label>
+                <Btn variant="brass" small icon={CheckCircle2} onClick={publishAfterReview} disabled={!reviewConfirmed || publishing}>{publishing ? "Publishing…" : "Publish challenge"}</Btn>
+                {publishError && <div style={{ color: C.rust, fontSize: 12, marginTop: 8 }}>{publishError}</div>}
+              </Card>
+            )}
             <Card>
               <div style={{ fontWeight: 700, marginBottom: 10 }}>Clarification questions (3)</div>
               {[
@@ -1456,7 +1484,7 @@ function ChallengeDetail({ ch, onBack }) {
       {tab === "Submitted Ideas (14)" && <SubmittedIdeasPanel />}
       {tab === "Updates" && (
         <Card>
-          {["Deadline extended by 10 days (05 Sep 2026)", "Clarification round opened for shortlisted applicants", "Budget band revised to ₹18–35L"].map((u, i) => (
+          {(ch.history?.length ? [...ch.history].reverse().map((event) => `${event.event.replaceAll("_", " ")} · ${new Date(event.at).toLocaleString()}`) : ["Deadline extended by 10 days (05 Sep 2026)", "Clarification round opened for shortlisted applicants", "Budget band revised to ₹18–35L"]).map((u, i) => (
             <div key={i} style={{ display: "flex", gap: 8, padding: "9px 0", borderTop: i > 0 ? `1px solid ${C.line}` : "none", fontSize: 13 }}>
               <Info size={14} color={C.brass} style={{ marginTop: 2, flexShrink: 0 }} /> {u}
             </div>
@@ -1921,25 +1949,66 @@ function SubmittedIdeasPanel() {
 /*  CREATE CHALLENGE WIZARD                                                */
 /* ---------------------------------------------------------------------- */
 function CreateChallenge({ onDone }) {
-  const steps = ["Problem", "Outcome & Constraints", "Pilot Parameters", "Review & Publish"];
+  const steps = ["Plain-language problem", "Structured specification", "Pilot context", "Human review"];
+  const emptyForm = {
+    title: "", department: "", objective: "", beneficiaries: "", rawProblemStatement: "",
+    requirementStatement: "", expectedOutcome: "", constraints: "", budget: "", location: "", timeline: "",
+    risk: "Medium", theme: "Miscellaneous",
+  };
+  const cached = (() => {
+    try { return JSON.parse(localStorage.getItem("vyavsay.challenge-draft.v1") || "null"); } catch { return null; }
+  })();
   const [step, setStep] = useState(0);
-  const [f, setF] = useState({
-    title: "", department: "", objective: "", beneficiaries: "", painPoint: "",
-    outcome: "", constraints: "", budget: "", location: "", data: "Available (anonymised)",
-    integrations: "", risk: "Medium",
-  });
-  const [structured, setStructured] = useState(null);
+  const [f, setF] = useState({ ...emptyForm, ...(cached?.fields || {}) });
+  const [draftId, setDraftId] = useState(cached?.draftId || null);
+  const [structured, setStructured] = useState(cached?.structured || null);
   const [structuring, setStructuring] = useState(false);
   const [structureError, setStructureError] = useState(null);
-  const [publishing, setPublishing] = useState(false);
-  const [publishError, setPublishError] = useState(null);
+  const [saveState, setSaveState] = useState(cached?.draftId ? "Saved" : "Not saved");
+  const [saveError, setSaveError] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const saveSequence = useRef(0);
 
-  const completeness = useMemo(() => {
-    const fields = Object.values(f);
-    const filled = fields.filter((v) => v && v.length > 3).length;
-    return Math.round((filled / fields.length) * 100);
+  const required = ["title", "department", "objective", "rawProblemStatement", "beneficiaries", "location", "timeline", "budget", "requirementStatement", "expectedOutcome", "constraints"];
+  const completeness = useMemo(() => Math.round((required.filter((key) => f[key]?.trim()).length / required.length) * 100), [f]);
+  const update = (key, value) => setF((current) => ({ ...current, [key]: value }));
+  const set = (key) => (event) => update(key, event.target.value);
+  const payload = () => ({ ...f, capabilities: structured?.capabilities || [] });
+
+  async function saveDraft(force = false) {
+    const hasContent = Object.values(f).some((value) => typeof value === "string" && value.trim());
+    if (!hasContent && !force) return null;
+    const requestId = ++saveSequence.current;
+    setSaveState("Saving");
+    setSaveError(null);
+    try {
+      const response = draftId
+        ? await api.saveChallengeDraft(draftId, payload())
+        : await api.createChallengeDraft(payload());
+      const challenge = response.challenge;
+      if (requestId !== saveSequence.current) return challenge;
+      setDraftId(challenge.id);
+      setSaveState("Saved");
+      localStorage.setItem("vyavsay.challenge-draft.v1", JSON.stringify({ draftId: challenge.id, fields: f, structured }));
+      return challenge;
+    } catch (error) {
+      if (requestId === saveSequence.current) {
+        setSaveState("Saved locally");
+        setSaveError(error.message);
+        localStorage.setItem("vyavsay.challenge-draft.v1", JSON.stringify({ draftId, fields: f, structured }));
+      }
+      if (force) throw error;
+      return null;
+    }
+  }
+
+  useEffect(() => {
+    localStorage.setItem("vyavsay.challenge-draft.v1", JSON.stringify({ draftId, fields: f, structured }));
+    const hasContent = Object.values(f).some((value) => typeof value === "string" && value.trim());
+    if (!hasContent) return undefined;
+    const timer = window.setTimeout(() => { saveDraft(); }, 900);
+    return () => window.clearTimeout(timer);
   }, [f]);
-  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
 
   async function generateRequirement() {
     setStructuring(true);
@@ -1947,41 +2016,42 @@ function CreateChallenge({ onDone }) {
     try {
       const result = await api.structureRequirement(f);
       setStructured(result);
-    } catch (err) {
-      setStructureError(err.message);
+      setF((current) => ({
+        ...current,
+        theme: result.theme || current.theme,
+        requirementStatement: result.requirementStatement || current.requirementStatement,
+        expectedOutcome: result.expectedOutcome || current.expectedOutcome,
+        constraints: result.constraints || current.constraints,
+      }));
+      setStep(1);
+    } catch (error) {
+      setStructureError(error.message);
     } finally {
       setStructuring(false);
     }
   }
 
-  async function publish() {
-    setPublishing(true);
-    setPublishError(null);
+  async function submitForReview() {
+    setSubmitting(true);
+    setSaveError(null);
     try {
-      const challenge = await api.createChallenge({
-        title: f.title,
-        dept: f.department,
-        budget: f.budget,
-        risk: f.risk,
-        location: f.location,
-        theme: structured?.theme,
-        requirementStatement: structured?.requirementStatement,
-        capabilities: structured?.capabilities,
-      });
-      onDone(challenge);
-    } catch (err) {
-      setPublishError(err.message);
+      const saved = await saveDraft(true);
+      const response = await api.submitChallengeDraft(saved?.id || draftId);
+      localStorage.removeItem("vyavsay.challenge-draft.v1");
+      onDone(response.challenge);
+    } catch (error) {
+      setSaveError(error.message);
     } finally {
-      setPublishing(false);
+      setSubmitting(false);
     }
   }
 
   return (
     <div>
-      <SectionTitle eyebrow="CHALLENGE IDENTIFICATION" title="Create Challenge" />
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 20 }}>
+      <SectionTitle eyebrow="CHALLENGE IDENTIFICATION" title="Turn a complaint into a buildable challenge" />
+      <div className="challenge-identification-grid" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 300px", gap: 20 }}>
         <div>
-          <div style={{ display: "flex", gap: 6, marginBottom: 18 }}>
+          <div className="challenge-identification-steps" style={{ display: "flex", gap: 6, marginBottom: 18 }}>
             {steps.map((s, i) => (
               <div key={s} onClick={() => setStep(i)}
                 style={{
@@ -1998,21 +2068,21 @@ function CreateChallenge({ onDone }) {
             {step === 0 && (
               <>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, background: C.brassSoft, color: C.brass, padding: "8px 12px", borderRadius: 4, fontSize: 12, marginBottom: 16 }}>
-                  <Sparkles size={14} /> AI drafting suggestion: describe the pain point in citizen/beneficiary terms, not system terms — this improves outcome-based framing.
+                  <Info size={14} /> Write it exactly as you would say it. Vyavsay will help turn it into a specification, but you remain responsible for reviewing every word.
                 </div>
                 <Field label="Department"><input style={inputStyle} value={f.department} onChange={set("department")} placeholder="e.g. Urban Development" /></Field>
                 <Field label="Problem statement title"><input style={inputStyle} value={f.title} onChange={set("title")} placeholder="e.g. Real-time public transport tracking" /></Field>
                 <Field label="Department objective"><textarea style={{ ...inputStyle, height: 70 }} value={f.objective} onChange={set("objective")} placeholder="What is the department ultimately trying to achieve?" /></Field>
                 <Field label="Target beneficiaries"><input style={inputStyle} value={f.beneficiaries} onChange={set("beneficiaries")} placeholder="e.g. Daily commuters in Tier-2 cities" /></Field>
-                <Field label="Current pain point" hint="Describe the symptom citizens/officials actually experience today — in free text, exactly as you'd say it out loud."><textarea style={{ ...inputStyle, height: 70 }} value={f.painPoint} onChange={set("painPoint")} placeholder="e.g. Our files frequently get lost during inter-department transfers." /></Field>
+                <Field label="Raw problem statement" hint="Use plain words. Example: Our files frequently get lost during inter-department transfers."><textarea style={{ ...inputStyle, height: 92 }} value={f.rawProblemStatement} onChange={set("rawProblemStatement")} placeholder="What is going wrong today?" /></Field>
 
                 <Btn variant="secondary" small icon={Sparkles} onClick={generateRequirement} disabled={structuring}>
-                  {structuring ? "Structuring…" : structured ? "Regenerate structured requirement" : "Generate structured requirement"}
+                  {structuring ? "Structuring…" : structured ? "Structure with AI again" : "Structure with AI"}
                 </Btn>
 
                 {structureError && (
                   <div style={{ marginTop: 12, fontSize: 12, color: C.rust }}>
-                    Couldn't reach the structuring service: {structureError}. Is the backend running on port 4000?
+                    Couldn't structure this draft: {structureError}
                   </div>
                 )}
 
@@ -2022,7 +2092,7 @@ function CreateChallenge({ onDone }) {
                       <Sparkles size={15} color={C.violet} style={{ marginTop: 1, flexShrink: 0 }} />
                       <div>
                         <div style={{ fontSize: 10.5, fontWeight: 700, color: C.inkSoft, letterSpacing: 0.4 }}>
-                          STANDARD PROBLEM STATEMENT {structured.confidence === "low" && "· low confidence, please refine"}
+                          AI-ASSISTED DRAFT {structured.confidence === "low" && "· low confidence, please refine"}
                         </div>
                         <div style={{ fontWeight: 700, fontSize: 13.5, marginTop: 3 }}>Requirement: {structured.requirementStatement}</div>
                         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
@@ -2039,8 +2109,12 @@ function CreateChallenge({ onDone }) {
             )}
             {step === 1 && (
               <>
-                <Field label="Expected measurable outcome" hint="State a number and a timeframe — not an activity."><textarea style={{ ...inputStyle, height: 70 }} value={f.outcome} onChange={set("outcome")} placeholder="e.g. Reduce average passenger wait-time uncertainty by 40% within 6 months" /></Field>
-                <Field label="Constraints"><textarea style={{ ...inputStyle, height: 60 }} value={f.constraints} onChange={set("constraints")} placeholder="Legacy systems, data-sharing limits, procurement rules…" /></Field>
+                <div style={{ background: C.violetSoft, border: `1px solid ${C.violet}22`, padding: "10px 12px", borderRadius: 5, fontSize: 12, marginBottom: 16 }}>
+                  <b>Review required.</b> These suggestions are editable drafting support, not an approval or a final decision.
+                </div>
+                <Field label="Requirement" hint="One clear technical sentence a startup can build against."><textarea style={{ ...inputStyle, height: 78 }} value={f.requirementStatement} onChange={set("requirementStatement")} placeholder="Describe the solution capability required." /></Field>
+                <Field label="Expected outcome" hint="Include a number and timeframe."><textarea style={{ ...inputStyle, height: 70 }} value={f.expectedOutcome} onChange={set("expectedOutcome")} placeholder="e.g. Reduce transfer delays by 30% within 6 months" /></Field>
+                <Field label="Constraints" hint="Existing systems, data, security, compliance or operational limits."><textarea style={{ ...inputStyle, height: 70 }} value={f.constraints} onChange={set("constraints")} placeholder="Legacy systems, data-sharing limits, procurement rules…" /></Field>
                 <Field label="Budget range"><input style={inputStyle} value={f.budget} onChange={set("budget")} placeholder="₹15–30 lakh" /></Field>
                 <Field label="Risk level">
                   <select style={inputStyle} value={f.risk} onChange={set("risk")}>
@@ -2052,12 +2126,7 @@ function CreateChallenge({ onDone }) {
             {step === 2 && (
               <>
                 <Field label="Pilot location"><input style={inputStyle} value={f.location} onChange={set("location")} placeholder="e.g. Pune & Nagpur (2 districts)" /></Field>
-                <Field label="Data availability">
-                  <select style={inputStyle} value={f.data} onChange={set("data")}>
-                    <option>Available (anonymised)</option><option>Available (raw, restricted)</option><option>Not yet available</option>
-                  </select>
-                </Field>
-                <Field label="Required integrations"><input style={inputStyle} value={f.integrations} onChange={set("integrations")} placeholder="e.g. State transport fleet API" /></Field>
+                <Field label="Timeline"><input style={inputStyle} value={f.timeline} onChange={set("timeline")} placeholder="e.g. 4-month pilot, beginning January 2027" /></Field>
                 <Card style={{ background: C.paper, border: `1px dashed ${C.lineStrong}` }}>
                   <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 6 }}>Suggested procurement pathway</div>
                   <div style={{ fontSize: 12.5, color: C.inkSoft }}>Based on risk = {f.risk} and budget band entered → <b style={{ color: C.ink }}>Pilot-to-scale innovation procurement route</b> (sandbox contract, no full tender required pre-validation).</div>
@@ -2066,25 +2135,25 @@ function CreateChallenge({ onDone }) {
             )}
             {step === 3 && (
               <>
-                <div style={{ fontWeight: 700, marginBottom: 10 }}>Review before publishing</div>
+                <div style={{ fontWeight: 700, marginBottom: 10 }}>Human review before publication</div>
                 {!structured?.requirementStatement && (
                   <div style={{ display: "flex", alignItems: "center", gap: 6, background: C.brassSoft, color: C.brass, padding: "8px 12px", borderRadius: 4, fontSize: 12, marginBottom: 14 }}>
-                    <AlertTriangle size={14} /> No structured requirement generated yet — go back to Step 1 and click "Generate structured requirement" so AI Startup Discovery can match this correctly.
+                    <AlertTriangle size={14} /> Structure and review the specification before submitting this challenge.
                   </div>
                 )}
                 {structured?.requirementStatement && (
                   <div style={{ marginBottom: 14, padding: 12, borderRadius: 6, background: C.violetSoft, border: `1px solid ${C.violet}22`, fontSize: 13 }}>
-                    <b>Requirement:</b> {structured.requirementStatement} <span style={{ color: C.inkSoft }}>({structured.theme})</span>
+                    <b>Requirement:</b> {f.requirementStatement} <span style={{ color: C.inkSoft }}>({f.theme})</span>
                   </div>
                 )}
-                {Object.entries(f).map(([k, v]) => (
+                {Object.entries(f).filter(([key]) => key !== "theme").map(([k, v]) => (
                   <div key={k} style={{ display: "flex", padding: "7px 0", borderTop: `1px solid ${C.line}`, fontSize: 12.8 }}>
                     <div style={{ width: 170, color: C.inkSoft, textTransform: "capitalize" }}>{k.replace(/([A-Z])/g, " $1")}</div>
                     <div style={{ fontWeight: 500 }}>{v || "—"}</div>
                   </div>
                 ))}
-                {publishError && (
-                  <div style={{ marginTop: 12, fontSize: 12, color: C.rust }}>Couldn't publish: {publishError}</div>
+                {saveError && (
+                  <div style={{ marginTop: 12, fontSize: 12, color: C.rust }}>{saveError}</div>
                 )}
               </>
             )}
@@ -2093,7 +2162,7 @@ function CreateChallenge({ onDone }) {
               <Btn variant="ghost" onClick={() => setStep(Math.max(0, step - 1))} disabled={step === 0}>Back</Btn>
               {step < steps.length - 1
                 ? <Btn icon={ArrowRight} onClick={() => setStep(step + 1)}>Continue</Btn>
-                : <Btn variant="brass" icon={CheckCircle2} onClick={publish} disabled={publishing || !f.title.trim()}>{publishing ? "Publishing…" : "Publish Challenge"}</Btn>}
+                : <Btn variant="brass" icon={CheckCircle2} onClick={submitForReview} disabled={submitting || completeness < 100}>{submitting ? "Submitting…" : "Submit for human review"}</Btn>}
             </div>
           </Card>
         </div>
@@ -2110,7 +2179,8 @@ function CreateChallenge({ onDone }) {
               </svg>
               <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", ...serif, fontSize: 22, fontWeight: 600 }}>{completeness}%</div>
             </div>
-            <div style={{ fontSize: 11.5, color: C.inkSoft, marginTop: 8 }}>Outcome-based & template-complete</div>
+            <div style={{ fontSize: 11.5, color: C.inkSoft, marginTop: 8 }}>Required fields completed. This is plain counting logic, not AI.</div>
+            <div style={{ marginTop: 12, fontSize: 11.5, color: saveState === "Saved locally" ? C.brass : C.teal, fontWeight: 600 }}>{saveState === "Saving" ? "Saving draft…" : `${saveState} · your history is retained`}</div>
           </Card>
           <Card>
             <div style={{ fontWeight: 700, fontSize: 12.8, marginBottom: 8 }}>Templates in use</div>

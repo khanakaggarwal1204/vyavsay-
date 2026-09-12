@@ -61,7 +61,7 @@ const PROBLEM_TYPES = [
 ];
 
 function combinedText(fields) {
-  return [fields.title, fields.objective, fields.beneficiaries, fields.painPoint, fields.outcome, fields.constraints]
+  return [fields.title, fields.objective, fields.beneficiaries, fields.rawProblemStatement ?? fields.painPoint, fields.expectedOutcome ?? fields.outcome, fields.constraints]
     .filter(Boolean)
     .join(" \n ");
 }
@@ -78,6 +78,8 @@ export function structureRequirement(fields) {
     return {
       theme: "Miscellaneous",
       requirementStatement: null,
+      expectedOutcome: null,
+      constraints: null,
       capabilities: [],
       matchedProblemType: null,
       confidence: "none",
@@ -98,6 +100,8 @@ export function structureRequirement(fields) {
     return {
       theme: best.theme,
       requirementStatement: best.requirementStatement,
+      expectedOutcome: fields.expectedOutcome || fields.outcome || "Achieve a measurable improvement of at least 30% within 6 months of the pilot launch.",
+      constraints: fields.constraints || "Integrate with existing department systems, protect sensitive data, and comply with applicable government security and procurement requirements.",
       capabilities: best.capabilities,
       matchedProblemType: best.key,
       confidence: bestScore >= 2 ? "high" : "medium",
@@ -107,10 +111,12 @@ export function structureRequirement(fields) {
   // Fallback: no recognised pattern — restate what the department gave us
   // in the standard "Requirement: ..." shape rather than leaving it blank,
   // and flag low confidence so the department knows to refine it manually.
-  const seed = (fields.painPoint || fields.objective || fields.title || "").trim();
+  const seed = (fields.rawProblemStatement || fields.painPoint || fields.objective || fields.title || "").trim();
   return {
     theme: "Miscellaneous",
     requirementStatement: seed ? `A digital solution to address: "${seed}".` : null,
+    expectedOutcome: fields.expectedOutcome || fields.outcome || "Define a measurable service improvement target and timeframe before submitting this challenge for review.",
+    constraints: fields.constraints || "Document existing systems, data access limits, security obligations, and procurement constraints before publication.",
     capabilities: [],
     matchedProblemType: null,
     confidence: "low",

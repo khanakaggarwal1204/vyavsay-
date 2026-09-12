@@ -44,20 +44,23 @@ before starting Vite, e.g. `VITE_API_URL=http://localhost:5000 npm run dev`.
 
 ## The AI-backed features
 
-**Challenge Identification** — in Challenges → Create Challenge, fill the
-"Problem" step (department, title, objective, pain point) in free text, then
-click "Generate structured requirement". It calls
+**Challenge Identification** — in Challenges → Create Challenge, capture the
+department, title, objective, beneficiaries and raw problem in plain language,
+then click **Structure with AI**. It calls
 `POST /api/requirements/structure`, which runs a rule-based engine
 (`backend/src/structuring.js`) that recognises common government problem
 patterns (lost/misplaced documents, urban waste, crop disease, public
 transport, rural healthcare, water quality, skilling-vs-jobs mismatch) and
-turns free text into a standard `Requirement: ...` statement, a challenge
-theme, and a list of concrete capabilities — e.g. "Our files frequently get
+turns free text into an editable Requirement, measurable Expected Outcome,
+Constraints, a challenge theme, and a list of concrete capabilities — e.g. "Our files frequently get
 lost during inter-department transfers" becomes "A secure digital
 document-tracking system with immutable audit trails and role-based access."
-Publishing the challenge calls `POST /api/challenges`, which persists it with
-that theme — so it's immediately usable by AI Startup Discovery and
-Auto-Eligibility Screening below, no extra setup needed.
+The browser keeps a local recovery copy while the backend autosaves a durable
+private draft and time-stamped audit history. A draft progresses through
+**Draft → Under Review → Published**. The author edits and submits it for
+review; a Platform Admin must explicitly publish it before startups can see it.
+The structuring engine is drafting support only and never makes a final
+procurement decision.
 
 Open any challenge (Challenges → click a row) to see the other two:
 
@@ -92,7 +95,11 @@ Open any challenge (Challenges → click a row) to see the other two:
 | GET | `/api/startups` | List all startups |
 | GET | `/api/challenges` | List all challenges |
 | GET | `/api/challenges/:id` | Get one challenge |
-| POST | `/api/requirements/structure` | Body `{ title, objective, beneficiaries, painPoint, outcome, constraints }` — turns free text into a standard requirement statement, theme, and capabilities. Stateless. |
+| POST | `/api/requirements/structure` | Body containing the challenge fields — creates an auditable deterministic structuring suggestion with Requirement, Expected Outcome and Constraints. |
+| POST | `/api/challenge-drafts` | Creates a private, autosaved Draft owned by the signed-in department user. |
+| PATCH | `/api/challenge-drafts/:id` | Saves an editable Draft and appends an audit-history event. |
+| POST | `/api/challenge-drafts/:id/submit` | Validates all required fields and moves a Draft to Under Review. |
+| POST | `/api/challenge-drafts/:id/publish` | Platform Admin only: publishes an approved review record for startup visibility. |
 | POST | `/api/challenges` | Body `{ title, dept, budget, risk, theme, requirementStatement, capabilities, deadline, location }` — publish a new challenge |
 | GET | `/api/challenges/:id/discovery` | AI-matched, sorted startup shortlist |
 | GET | `/api/challenges/:id/applications` | Applications + live eligibility verdicts |

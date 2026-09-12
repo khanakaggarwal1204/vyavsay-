@@ -4,6 +4,13 @@ import { readDB, writeDB, resetDB } from "./db.js";
 import { matchStartupsForChallenge } from "./matching.js";
 import { runEligibilityCheck } from "./eligibility.js";
 import { structureRequirement } from "./structuring.js";
+import {
+  challengeVisibleTo,
+  draftCompleteness,
+  normaliseChallengeDraft,
+  recordChallengeHistory,
+  validateDraftForReview,
+} from "./challengeIdentification.js";
 import { weightsForChallenge, rubricMessage, validateScores, computeTotal, rankEvaluations } from "./evaluation.js";
 import { computePilotPerformance, validateKpiTarget } from "./performance.js";
 import { generateContract, contractProgress, MILESTONE_STATUSES } from "./contracting.js";
@@ -120,13 +127,14 @@ router.get("/startups", (_req, res) => {
 /* ------------------------------ Challenges ------------------------------ */
 router.get("/challenges", (_req, res) => {
   const db = readDB();
-  res.json(db.challenges);
+  const user = _req.user;
+  res.json(db.challenges.filter((challenge) => challengeVisibleTo(challenge, user)));
 });
 
 router.get("/challenges/:id", (req, res) => {
   const db = readDB();
   const challenge = findChallenge(db, req.params.id);
-  if (!challenge) return res.status(404).json({ error: "Challenge not found" });
+  if (!challenge || !challengeVisibleTo(challenge, req.user)) return res.status(404).json({ error: "Challenge not found" });
   res.json(challenge);
 });
 
@@ -135,9 +143,139 @@ router.get("/challenges/:id", (req, res) => {
 // structured requirement statement instead of a free-form request. Stateless
 // — call as many times as the department edits their draft.
 router.post("/requirements/structure", requireRole("Government Official", "Platform Admin"), (req, res) => {
-  const { title, objective, beneficiaries, painPoint, outcome, constraints } = req.body || {};
-  const result = structureRequirement({ title, objective, beneficiaries, painPoint, outcome, constraints });
-  res.json(result);
+  let fields;
+  try {
+    fields = normaliseChallengeDraft(req.body || {});
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+  if (!fields.rawProblemStatement && !fields.objective && !fields.title) {
+    return res.status(400).json({ error: "Add a plain-language problem, objective, or title before structuring." });
+  }
+  const result = structureRequirement(fields);
+  const db = readDB();
+  db.aiStructuringLogs = db.aiStructuringLogs || [];
+  db.aiStructuringLogs.push({
+    id: `structure_${randomUUID()}`,
+    userId: req.user.id,
+    engine: "deterministic-policy-structuring-v1",
+    input: fields,
+    output: result,
+    createdAt: new Date().toISOString(),
+  });
+  writeDB(db);
+  res.json({ ...result, reviewRequired: true, engine: "deterministic-policy-structuring-v1" });
+});
+
+function draftPayload(challenge) {
+  return {
+    title: challenge.title,
+    department: challenge.dept,
+    objective: challenge.objective || "",
+    rawProblemStatement: challenge.rawProblemStatement || "",
+    beneficiaries: challenge.beneficiaries || "",
+    location: challenge.location || "",
+    timeline: challenge.timeline || challenge.deadline || "",
+    budget: challenge.budget || "",
+    requirementStatement: challenge.requirementStatement || "",
+    expectedOutcome: challenge.expectedOutcome || challenge.outcome || "",
+    constraints: challenge.constraints || "",
+    risk: challenge.risk || "Medium",
+    theme: challenge.theme || "Miscellaneous",
+  };
+}
+
+function requireDraftEditor(req, res, challenge) {
+  if (!challenge) {
+    res.status(404).json({ error: "Challenge draft not found." });
+    return false;
+  }
+  if (req.user.role !== "Platform Admin" && challenge.createdBy !== req.user.id) {
+    res.status(403).json({ error: "Only the draft author or a Platform Admin can access this draft." });
+    return false;
+  }
+  return true;
+}
+
+// A draft is a private challenge record from the first save onward. This
+// gives autosave a durable target and leaves a time-stamped history behind.
+router.post("/challenge-drafts", requireRole("Government Official", "Platform Admin"), (req, res) => {
+  let fields;
+  try {
+    fields = normaliseChallengeDraft(req.body || {});
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+  const db = readDB();
+  const id = `CH-DRAFT-${randomUUID().slice(0, 8).toUpperCase()}`;
+  const challenge = {
+    id,
+    title: fields.title || "Untitled challenge",
+    dept: fields.department || req.user.profile?.department || "Unassigned Department",
+    status: "Draft",
+    apps: 0,
+    deadline: fields.timeline || "Draft",
+    ...fields,
+    capabilities: [],
+    createdBy: req.user.id,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    history: [],
+  };
+  recordChallengeHistory(challenge, { actor: req.user, event: "draft_created" });
+  db.challenges.push(challenge);
+  writeDB(db);
+  res.status(201).json({ challenge, completeness: draftCompleteness(draftPayload(challenge)) });
+});
+
+router.patch("/challenge-drafts/:id", requireRole("Government Official", "Platform Admin"), (req, res) => {
+  const db = readDB();
+  const challenge = findChallenge(db, req.params.id);
+  if (!requireDraftEditor(req, res, challenge)) return;
+  if (challenge.status !== "Draft") return res.status(409).json({ error: "Only a Draft can be edited. Create a new draft to change a submitted challenge." });
+  let fields;
+  try {
+    fields = normaliseChallengeDraft({ ...draftPayload(challenge), ...(req.body || {}) });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+  Object.assign(challenge, fields, {
+    title: fields.title || "Untitled challenge",
+    dept: fields.department || req.user.profile?.department || "Unassigned Department",
+    deadline: fields.timeline || "Draft",
+  });
+  if (Array.isArray(req.body?.capabilities)) challenge.capabilities = req.body.capabilities.filter((item) => typeof item === "string").slice(0, 12);
+  recordChallengeHistory(challenge, { actor: req.user, event: "draft_saved", details: { completeness: draftCompleteness(fields).percent } });
+  writeDB(db);
+  res.json({ challenge, completeness: draftCompleteness(fields) });
+});
+
+router.post("/challenge-drafts/:id/submit", requireRole("Government Official", "Platform Admin"), (req, res) => {
+  const db = readDB();
+  const challenge = findChallenge(db, req.params.id);
+  if (!requireDraftEditor(req, res, challenge)) return;
+  if (challenge.status !== "Draft") return res.status(409).json({ error: "This challenge has already been submitted for review." });
+  const fields = draftPayload(challenge);
+  const validation = validateDraftForReview(fields);
+  if (validation) return res.status(422).json(validation);
+  challenge.status = "Under Review";
+  recordChallengeHistory(challenge, { actor: req.user, event: "submitted_for_review", details: { completeness: 100 } });
+  writeDB(db);
+  res.json({ challenge });
+});
+
+router.post("/challenge-drafts/:id/publish", requireRole("Platform Admin"), (req, res) => {
+  const db = readDB();
+  const challenge = findChallenge(db, req.params.id);
+  if (!challenge) return res.status(404).json({ error: "Challenge draft not found." });
+  if (challenge.status !== "Under Review") return res.status(409).json({ error: "Only a challenge under review can be published." });
+  const validation = validateDraftForReview(draftPayload(challenge));
+  if (validation) return res.status(422).json(validation);
+  challenge.status = "Published";
+  challenge.publishedAt = new Date().toISOString();
+  recordChallengeHistory(challenge, { actor: req.user, event: "published_after_human_review" });
+  writeDB(db);
+  res.json({ challenge });
 });
 
 // Publishes a new challenge (department fills the structured form -> this
@@ -164,6 +302,7 @@ router.post("/challenges", requireRole("Government Official", "Platform Admin"),
     requirementStatement: requirementStatement || null,
     capabilities: capabilities || [],
     location: location?.trim() || null,
+    createdBy: req.user.id,
   };
 
   db.challenges.push(challenge);
