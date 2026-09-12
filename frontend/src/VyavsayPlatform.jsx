@@ -22,19 +22,19 @@ import { LANGUAGES, t } from "./i18n.js";
 /* ---------------------------------------------------------------------- */
 const C = {
   ink: "#06305C",
-  inkSoft: "#516882",
-  paper: "#F1F8FD",
-  surface: "#FFFFFF",
-  line: "#D9E7F2",
-  lineStrong: "#AFC7DA",
-  brass: "#D07A1F",
-  brassSoft: "#FFF2DF",
-  teal: "#068B69",
-  tealSoft: "#E0F6EE",
-  rust: "#B42318",
-  rustSoft: "#FDE7E4",
-  navySoft: "#E6F0FA",
-  skySoft: "#E8F6FF",
+  inkSoft: "#4C6175",
+  paper: "#FBF6ED",
+  surface: "#FFFDFA",
+  line: "#E7D7C1",
+  lineStrong: "#CDB58F",
+  brass: "#DF7200",
+  brassSoft: "#FFF0D6",
+  teal: "#087A58",
+  tealSoft: "#DDF3E7",
+  rust: "#A62B24",
+  rustSoft: "#FCE5E1",
+  navySoft: "#E8EEF4",
+  skySoft: "#F7E9D6",
   blue: "#0B5CAD",
   blueSoft: "#E5F1FC",
   violet: "#6B4FD6",
@@ -54,6 +54,15 @@ body { box-sizing: border-box; overflow-x: hidden; }
   .vyavsay-public-stepper > * { min-width: 92px !important; flex: 0 0 auto !important; }
 }
 .vyavsay-solve-card:hover { transform: translateY(-2px); box-shadow: 0 16px 34px rgba(6,48,92,0.12) !important; }
+.vyavsay-dashboard-welcome {
+  background-image:
+    linear-gradient(90deg, rgba(255,250,240,.97) 0%, rgba(255,250,240,.88) 45%, rgba(255,250,240,.48) 100%),
+    url("/vyavsay-heritage-wide-bg.png") !important;
+  background-size: cover !important;
+  background-position: center 54% !important;
+  border-color: #DFC49F !important;
+  box-shadow: 0 12px 30px rgba(106,65,22,.11) !important;
+}
 @media (max-width: 760px) {
   .vyavsay-overview { width: 100vw !important; max-width: 100vw !important; min-width: 0 !important; overflow-x: clip !important; }
   .vyavsay-overview > header, .vyavsay-overview > .vyavsay-warli-border, .vyavsay-overview > .vyavsay-hero,
@@ -169,6 +178,12 @@ body { box-sizing: border-box; overflow-x: hidden; }
   .vyavsay-main-content table { display: block; max-width: 100%; overflow-x: auto; white-space: nowrap; }
   .vyavsay-mobile-scroll { max-width: 100%; overflow-x: auto; scrollbar-width: thin; }
   .vyavsay-dashboard-hero-art { display: none; }
+  .vyavsay-dashboard-welcome {
+    background-image:
+      linear-gradient(90deg, rgba(255,250,240,.96), rgba(255,250,240,.78)),
+      url("/vyavsay-heritage-wide-bg.png") !important;
+    background-position: 58% center !important;
+  }
   .vyavsay-dashboard-columns { grid-template-columns: minmax(0,1fr) !important; }
   .vyavsay-challenge-tabs { overflow-x: auto; white-space: nowrap; scrollbar-width: thin; }
   .vyavsay-challenge-tabs > * { flex: 0 0 auto; }
@@ -379,7 +394,7 @@ function Card({ children, style, className = "", noPad, onClick }) {
       onMouseLeave={onClick ? () => setHover(false) : undefined}
       style={{
         background: C.surface, border: `1px solid ${C.line}`, borderRadius: 6,
-        boxShadow: hover ? "0 14px 34px rgba(6,48,92,0.12)" : "0 10px 28px rgba(6,48,92,0.055)",
+        boxShadow: hover ? "0 14px 34px rgba(91,54,18,0.14)" : "0 8px 24px rgba(91,54,18,0.07)",
         padding: noPad ? 0 : 18,
         cursor: onClick ? "pointer" : undefined,
         transform: hover ? "translateY(-2px)" : "translateY(0)",
@@ -400,7 +415,7 @@ function Btn({ children, variant = "primary", icon: Icon, onClick, small, style,
     opacity: disabled ? 0.55 : 1,
   };
   const variants = {
-    primary: { background: C.ink, color: "#fff" },
+    primary: { background: C.brass, color: "#fff" },
     brass: { background: C.brass, color: "#fff" },
     secondary: { background: "#fff", color: C.ink, border: `1px solid ${C.lineStrong}` },
     ghost: { background: "transparent", color: C.inkSoft },
@@ -435,9 +450,9 @@ function SectionTitle({ eyebrow, title, right }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
       <div style={{ display: "flex", alignItems: "stretch", gap: 10 }}>
-        <div style={{ width: 4, borderRadius: 2, background: C.blue }} />
+        <div style={{ width: 4, borderRadius: 2, background: C.rust }} />
         <div>
-          {eyebrow && <div style={{ fontSize: 11.5, color: C.blue, fontWeight: 700, letterSpacing: 0, marginBottom: 3 }}>{eyebrow}</div>}
+          {eyebrow && <div style={{ fontSize: 11.5, color: C.rust, fontWeight: 700, letterSpacing: 0, marginBottom: 3 }}>{eyebrow}</div>}
           <h2 style={{ ...serif, fontSize: 24, color: C.ink, margin: 0 }}>{title}</h2>
         </div>
       </div>
@@ -486,17 +501,30 @@ function BrandMark({ light = false, size = 34 }) {
   );
 }
 
-function AshokaPillarMark() {
+function SidebarBrand() {
   return (
-    <svg viewBox="0 0 32 40" width="24" height="30" fill="none" aria-hidden="true" style={{ flex: "0 0 auto" }}>
-      <circle cx="16" cy="6" r="3.2" fill={C.ink} />
-      <circle cx="10.5" cy="8" r="2.7" fill={C.ink} />
-      <circle cx="21.5" cy="8" r="2.7" fill={C.ink} />
-      <path d="M8 12h16l-2.2 7H10.2L8 12Z" fill={C.ink} />
-      <path d="M11 20h10v3H11zM8.5 25h15v2.8h-15z" fill={C.ink} />
-      <circle cx="16" cy="31.5" r="3.3" stroke={C.ink} strokeWidth="1.4" />
-      <path d="M16 28.2v6.6M12.7 31.5h6.6M13.7 29.2l4.6 4.6M18.3 29.2l-4.6 4.6" stroke={C.ink} strokeWidth=".8" />
-      <path d="M7 36h18M9 38.5h14" stroke={C.ink} strokeWidth="2" strokeLinecap="round" />
+    <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+      <AshokaPillarMark color="#A96A2A" width={28} height={35} />
+      <div style={{ minWidth: 0, lineHeight: 1.04 }}>
+        <div style={{ color: C.ink, fontSize: 17, fontWeight: 900, letterSpacing: ".025em" }}>VYAVSAY</div>
+        <div style={{ color: C.inkSoft, fontSize: 8.2, fontWeight: 650, marginTop: 3 }}>Innovate Maharashtra</div>
+        <div style={{ color: C.inkSoft, fontSize: 8.2, fontWeight: 650, marginTop: 1 }}>Stronger Tomorrow</div>
+      </div>
+    </div>
+  );
+}
+
+function AshokaPillarMark({ color = C.ink, width = 24, height = 30 }) {
+  return (
+    <svg viewBox="0 0 32 40" width={width} height={height} fill="none" aria-hidden="true" style={{ flex: "0 0 auto" }}>
+      <circle cx="16" cy="6" r="3.2" fill={color} />
+      <circle cx="10.5" cy="8" r="2.7" fill={color} />
+      <circle cx="21.5" cy="8" r="2.7" fill={color} />
+      <path d="M8 12h16l-2.2 7H10.2L8 12Z" fill={color} />
+      <path d="M11 20h10v3H11zM8.5 25h15v2.8h-15z" fill={color} />
+      <circle cx="16" cy="31.5" r="3.3" stroke={color} strokeWidth="1.4" />
+      <path d="M16 28.2v6.6M12.7 31.5h6.6M13.7 29.2l4.6 4.6M18.3 29.2l-4.6 4.6" stroke={color} strokeWidth=".8" />
+      <path d="M7 36h18M9 38.5h14" stroke={color} strokeWidth="2" strokeLinecap="round" />
     </svg>
   );
 }
@@ -1288,10 +1316,10 @@ export default function App() {
       <style>{FONT_IMPORT}</style>
       {mobileNavOpen && <button className="vyavsay-nav-backdrop" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} />}
       {/* SIDEBAR */}
-      <aside className={`vyavsay-sidebar${mobileNavOpen ? " is-open" : ""}`} style={{ width: 216, flexShrink: 0, borderRight: `1px solid ${C.line}`, background: "#FAFDFF", position: "sticky", top: 0, height: "100vh", display: "flex", flexDirection: "column" }}>
-        <div style={{ padding: "20px 18px 16px", borderBottom: `1px solid ${C.line}` }}>
+      <aside className={`vyavsay-sidebar${mobileNavOpen ? " is-open" : ""}`} style={{ width: 216, flexShrink: 0, borderRight: `1px solid ${C.line}`, background: "#FFFCF7", position: "sticky", top: 0, height: "100vh", display: "flex", flexDirection: "column" }}>
+        <div style={{ padding: "17px 18px 15px", borderBottom: `1px solid ${C.line}` }}>
           <div onClick={() => setEntered(false)} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }} title="Back to overview">
-            <BrandMark size={30} />
+            <SidebarBrand />
           </div>
         </div>
         <nav style={{ padding: "10px 10px", flex: 1, overflowY: "auto" }}>
@@ -1303,8 +1331,8 @@ export default function App() {
                 style={{
                   display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 4,
                   cursor: "pointer", marginBottom: 2, fontSize: 13, fontWeight: active ? 700 : 500,
-                  background: active ? C.blueSoft : "transparent", color: active ? C.blue : C.inkSoft,
-                  borderLeft: active ? `3px solid ${C.blue}` : "3px solid transparent",
+                  background: active ? C.rustSoft : "transparent", color: active ? C.rust : C.inkSoft,
+                  borderLeft: active ? `3px solid ${C.rust}` : "3px solid transparent",
                 }}>
                 <Icon size={15} />
                 {t(language, n.label)}
@@ -1323,12 +1351,17 @@ export default function App() {
       {/* MAIN */}
       <div className="vyavsay-app-main" style={{ flex: 1, minWidth: 0 }}>
         {/* TOPBAR */}
-        <header className="vyavsay-topbar" style={{ height: 64, borderBottom: `1px solid ${C.line}`, background: "rgba(255,255,255,0.92)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", padding: "0 22px", gap: 16, position: "sticky", top: 0, zIndex: 10 }}>
+        <header className="vyavsay-topbar" style={{ height: 64, borderBottom: `1px solid ${C.line}`, background: "#FFFDFA", display: "flex", alignItems: "center", padding: "0 22px", gap: 16, position: "sticky", top: 0, zIndex: 10 }}>
           <button className="vyavsay-mobile-menu" type="button" aria-label="Open navigation" onClick={() => setMobileNavOpen(true)} style={{ display: "none", placeItems: "center", width: 38, height: 38, padding: 0, border: `1px solid ${C.line}`, borderRadius: 6, background: "#fff", color: C.ink, flexShrink: 0 }}><Menu size={19} /></button>
           <div className="vyavsay-topbar-search" style={{ flex: 1, maxWidth: 420, position: "relative" }}>
             <Search size={15} style={{ position: "absolute", left: 10, top: 10 }} color={C.inkSoft} />
+<<<<<<< HEAD
             <input placeholder={t(language, "Search challenges, startups, departments…")}
               style={{ ...inputStyle, paddingLeft: 32, background: "#F4FAFF", border: `1px solid ${C.line}`, borderRadius: 999 }} />
+=======
+            <input placeholder="Search challenges, startups, departments…"
+              style={{ ...inputStyle, paddingLeft: 32, background: "#FFF9F0", border: `1px solid ${C.line}`, borderRadius: 999 }} />
+>>>>>>> 5bc65e7 (Unify frontend theme and enhance dashboard)
           </div>
           <div className="vyavsay-topbar-spacer" style={{ flex: 1 }} />
           <LanguageSelector language={language} onChange={setLanguage} />
@@ -1449,7 +1482,7 @@ function Dashboard({ role, name, onOpenChallenge, setView }) {
 
   return (
     <div>
-      <Card style={{ position: "relative", overflow: "hidden", marginBottom: 22, minHeight: 138, background: `linear-gradient(110deg, #FFFFFF 0%, ${C.skySoft} 100%)` }}>
+      <Card className="vyavsay-dashboard-welcome" style={{ position: "relative", overflow: "hidden", marginBottom: 22, minHeight: 138 }}>
         <div style={{ position: "relative", zIndex: 1, maxWidth: 620 }}>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 7, background: C.blueSoft, color: C.blue, padding: "5px 9px", borderRadius: 999, fontSize: 11.5, fontWeight: 800, marginBottom: 12 }}>
             <ShieldCheck size={13} /> Trusted government-startup workspace
@@ -1460,15 +1493,6 @@ function Dashboard({ role, name, onOpenChallenge, setView }) {
           <p style={{ fontSize: 13.2, color: C.inkSoft, lineHeight: 1.6, maxWidth: 560, margin: "8px 0 0" }}>
             Track challenges, pilots, contracts, validation evidence and payments through one transparent Vyavsay pipeline.
           </p>
-        </div>
-        <div className="vyavsay-dashboard-hero-art" style={{ position: "absolute", right: 18, bottom: -5, width: 290, opacity: 0.56 }}>
-          <svg viewBox="0 0 320 120" width="100%" height="100%" fill="none" aria-hidden="true">
-            <path d="M4 105H316" stroke="#9EC4DE" strokeWidth="2" />
-            <path d="M188 105V58H227V105M195 58V45H220V58M202 45V35H213V45" fill="#CFE7F8" stroke="#9EC4DE" />
-            <path d="M238 105V70H268V105M279 105V48H304V105M137 105V78H174V105" fill="#E2F2FC" stroke="#B6D4EA" />
-            <path d="M25 105V68H92V105M37 68V53H80V68M48 53V39H69V53" fill="#D7ECFA" stroke="#9EC4DE" />
-            <path d="M20 68H98L89 58H29L20 68Z" fill="#F4C879" />
-          </svg>
         </div>
       </Card>
       <SectionTitle
@@ -3563,13 +3587,6 @@ function ScaleUp() {
 /*  ADMIN                                                                   */
 /* ---------------------------------------------------------------------- */
 function Admin() {
-  const [mockData, setMockData] = useState(null);
-  const [mockDataError, setMockDataError] = useState(null);
-
-  useEffect(() => {
-    api.getMockData().then(setMockData).catch((error) => setMockDataError(error.message));
-  }, []);
-
   return (
     <div>
       <SectionTitle eyebrow="PLATFORM GOVERNANCE" title="Admin Dashboard" />
@@ -3605,24 +3622,6 @@ function Admin() {
           ))}
         </Card>
       </div>
-      <Card style={{ marginTop: 18 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline", marginBottom: 10 }}>
-          <div style={{ fontWeight: 700 }}>Loaded mock data</div>
-          {mockData && <span style={{ fontSize: 12, color: C.inkSoft }}>{mockData.startups.length} startups · {mockData.governmentOfficials.length} government officials</span>}
-        </div>
-        {mockDataError && <div style={{ color: C.rust, fontSize: 12.5 }}>{mockDataError}</div>}
-        {!mockData && !mockDataError && <div style={{ color: C.inkSoft, fontSize: 12.5 }}>Loading mock records…</div>}
-        {mockData && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 14 }}>
-          <div>
-            <div style={{ fontSize: 11, fontWeight: 800, color: C.inkSoft, marginBottom: 6 }}>STARTUPS</div>
-            {mockData.startups.slice(0, 6).map((startup) => <div key={startup.id} style={{ fontSize: 12.5, padding: "5px 0", borderTop: `1px solid ${C.line}` }}><b>{startup.name}</b><span style={{ color: C.inkSoft }}> · {startup.field} · {startup.trl}</span></div>)}
-          </div>
-          <div>
-            <div style={{ fontSize: 11, fontWeight: 800, color: C.inkSoft, marginBottom: 6 }}>GOVERNMENT OFFICIALS</div>
-            {mockData.governmentOfficials.slice(0, 6).map((official) => <div key={official.id} style={{ fontSize: 12.5, padding: "5px 0", borderTop: `1px solid ${C.line}` }}><b>{official.name}</b><span style={{ color: C.inkSoft }}> · {official.designation}</span></div>)}
-          </div>
-        </div>}
-      </Card>
     </div>
   );
 }
