@@ -56,7 +56,8 @@ function requireAuth(req, res, next) {
 
 function requireRole(...roles) {
   return (req, res, next) => {
-    if (!req.user || !roles.includes(req.user.role)) return res.status(403).json({ error: "You don't have permission to do that." });
+    if (!req.user) return res.status(401).json({ error: "Your session has expired. Please sign in again." });
+    if (!roles.includes(req.user.role)) return res.status(403).json({ error: "You don't have permission to do that." });
     next();
   };
 }
