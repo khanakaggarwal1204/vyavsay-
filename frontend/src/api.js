@@ -104,8 +104,18 @@ export const api = {
   // startups, official email domain for government officials, admin-issued
   // invite codes for Expert Evaluator / Validation Agency / Platform Admin).
   getRoles: () => request("/auth/roles"),
+  // rememberMe defaults to true server-side when omitted, but we always send
+  // it explicitly here so the checkbox state is unambiguous.
   register: (payload) => request("/auth/register", { method: "POST", body: JSON.stringify(payload) }),
-  login: (email, password) => request("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
+  login: (email, password, rememberMe = true) =>
+    request("/auth/login", { method: "POST", body: JSON.stringify({ email, password, rememberMe }) }),
   logout: () => request("/auth/logout", { method: "POST" }),
   getMe: () => request("/auth/me"),
+
+  // Role-scoped, real-time dashboard data (see backend/src/routes.js
+  // GET /api/dashboard/summary) — metrics and "my tasks" computed live from
+  // the same store every other screen reads/writes, so a startup's own
+  // registration/draft shows up here immediately, and each role only ever
+  // sees its own numbers and its own task list.
+  getDashboardSummary: () => request("/dashboard/summary"),
 };

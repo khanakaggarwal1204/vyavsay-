@@ -21,6 +21,7 @@ import { validatePilotDesign, createPilotDesign, advancePhase } from "./pilotDes
 import {
   ROLES, hashPassword, verifyPassword, validatePassword, verifyRegistration, isValidEmail,
   createSession, findSession, destroySession, checkLockout, recordFailedAttempt, clearFailedAttempts, publicUser,
+  SESSION_TTL_MS, REMEMBER_ME_TTL_MS,
 } from "./auth.js";
 
 const router = Router();
@@ -883,15 +884,20 @@ router.post("/pilot-design/:id/advance", requireRole("Government Official", "Val
 /* --------------------------------- Auth ---------------------------------- */
 // Registration and legitimacy verification, scoped per role — see
 // backend/src/auth.js for the specifics of what each role has to prove.
-function setSessionCookie(res, token) {
-  res.cookie("vyavsay_session", token, { httpOnly: true, sameSite: "strict", maxAge: 8 * 3600000, secure: process.env.NODE_ENV === "production", path: "/" });
+function setSessionCookie(res, token, rememberMe = false) {
+  // "Remember me" sets a cookie that survives closing the browser, matching
+  // the ~1-year sliding session created in auth.js — a registered user who
+  // opts in never has to sign in again from that device. Without it, the
+  // cookie (and the session behind it) still expire in 8 hours as before.
+  const maxAge = rememberMe ? REMEMBER_ME_TTL_MS : SESSION_TTL_MS;
+  res.cookie("vyavsay_session", token, { httpOnly: true, sameSite: "strict", maxAge, secure: process.env.NODE_ENV === "production", path: "/" });
 }
 
 router.get("/auth/roles", (_req, res) => res.json({ roles: ROLES }));
 
 router.post("/auth/register", (req, res) => {
   const db = readDB();
-  const { role, name, email, password } = req.body || {};
+  const { role, name, email, password, rememberMe } = req.body || {};
 
   if (!ROLES.includes(role)) return res.status(400).json({ error: "Choose a valid role." });
   if (!name || !name.trim()) return res.status(400).json({ error: "Name is required." });
@@ -925,16 +931,21 @@ router.post("/auth/register", (req, res) => {
   db.authAudit = db.authAudit || [];
   db.authAudit.push({ id: `aa_${randomUUID()}`, type: "register", userId: user.id, role, email: user.email, verificationStatus: user.verificationStatus, at: user.createdAt });
 
-  const token = createSession(db, user.id);
+  // Default to "remember me" on: once someone has registered, they shouldn't
+  // have to register (or even sign back in) again on the same device. An
+  // explicit `rememberMe: false` from the client opts back into the shorter,
+  // more cautious 8-hour session (e.g. a shared/public computer).
+  const remember = rememberMe !== false;
+  const token = createSession(db, user.id, remember);
   writeDB(db);
 
-  setSessionCookie(res, token);
+  setSessionCookie(res, token, remember);
   res.status(201).json({ user: publicUser(user), token });
 });
 
 router.post("/auth/login", (req, res) => {
   const db = readDB();
-  const { email, password } = req.body || {};
+  const { email, password, rememberMe } = req.body || {};
   if (!isValidEmail(email) || !password) return res.status(400).json({ error: "Enter your email and password." });
 
   const lockoutError = checkLockout(email.toLowerCase());
@@ -953,11 +964,14 @@ router.post("/auth/login", (req, res) => {
   }
 
   clearFailedAttempts(email.toLowerCase());
-  const token = createSession(db, user.id);
-  db.authAudit.push({ id: `aa_${randomUUID()}`, type: "login", userId: user.id, role: user.role, email: user.email, at: new Date().toISOString() });
+  // Same default as registration — stay signed in unless the person explicitly
+  // unchecks "remember me" (e.g. on a shared device).
+  const remember = rememberMe !== false;
+  const token = createSession(db, user.id, remember);
+  db.authAudit.push({ id: `aa_${randomUUID()}`, type: "login", userId: user.id, role: user.role, email: user.email, rememberMe: remember, at: new Date().toISOString() });
   writeDB(db);
 
-  setSessionCookie(res, token);
+  setSessionCookie(res, token, remember);
   res.json({ user: publicUser(user), token });
 });
 
@@ -987,6 +1001,166 @@ router.post("/auth/invites", requireRole("Platform Admin"), (req, res) => {
   db.inviteCodes.push({ code, role, issuedBy: req.user.id, issuedAt: new Date().toISOString(), usedBy: null });
   writeDB(db);
   res.status(201).json({ code, role });
+});
+
+/* ------------------------------ Dashboard -------------------------------- */
+// GET /api/dashboard/summary — replaces the old hard-coded per-role numbers
+// and the shared static challenge list. Everything here is computed live
+// from readDB() on every request and scoped to the signed-in user, so:
+//   - a Startup's own registration/application/draft shows up the moment
+//     it's saved, on their own dashboard AND on the dashboards below that
+//     are entitled to see it (department official, evaluator, admin);
+//   - an Expert Evaluator only ever sees their own completed evaluations
+//     and the pool of applications actually waiting on a score from them
+//     — never another evaluator's queue, never another role's data;
+//   - a Government Official only sees their own department's challenges
+//     and their own drafts, not every department's pipeline;
+//   - Platform Admin sees real platform-wide totals, not a canned number.
+function buildDashboardSummary(db, user) {
+  const startups = db.startups || [];
+  const challenges = db.challenges || [];
+  const applications = db.applications || [];
+  const evaluations = db.evaluations || [];
+  const pilotDesigns = db.pilotDesigns || [];
+  const contracts = db.contracts || [];
+  const visible = challenges.filter((c) => challengeVisibleTo(c, user));
+  const findChallengeById = (id) => challenges.find((c) => c.id === id);
+  const findStartupById = (id) => startups.find((s) => s.id === id);
+
+  if (user.role === "Startup") {
+    const mine = startups.find((s) => s.ownerUserId === user.id) || null;
+    const myApps = mine ? applications.filter((a) => a.startupId === mine.id) : [];
+    const myPilots = mine ? pilotDesigns.filter((p) => p.startupId === mine.id) : [];
+    const myContracts = mine ? contracts.filter((c) => c.startupId === mine.id) : [];
+    const openChallenges = visible.filter((c) => ["Applications Open", "Published"].includes(c.status));
+    const paidMilestones = myContracts.flatMap((c) => c.milestones || []).filter((m) => m.status === "Paid");
+
+    return {
+      role: user.role,
+      name: user.name,
+      metrics: [
+        { label: "Startup profile", value: mine ? (mine.badge || "Registered") : "Not registered yet", sub: mine ? mine.recog : "Register your startup to appear to officials", icon: "Rocket" },
+        { label: "Open challenges you can apply to", value: String(openChallenges.length), sub: "Live from the challenge pipeline", icon: "Target" },
+        { label: "Applications submitted", value: String(myApps.length), sub: `${myApps.filter((a) => a.status === "Eligibility Passed").length} passed eligibility`, icon: "FileText" },
+        { label: "Pilots in design/active", value: String(myPilots.length), sub: myPilots[0]?.scopeLabel || "None yet", icon: "FlaskConical" },
+        { label: "Milestones paid", value: String(paidMilestones.length), sub: `of ${myContracts.flatMap((c) => c.milestones || []).length} total`, icon: "IndianRupee" },
+      ],
+      tasksTitle: "Your pipeline",
+      tasks: mine
+        ? myApps.map((a) => {
+            const c = findChallengeById(a.challengeId);
+            return { id: a.id, title: c ? c.title : a.challengeId, meta: c ? c.dept : "", status: a.status || "Submitted" };
+          })
+        : [{ id: "register", title: "Register your startup profile", meta: "Required before you can apply to any challenge", status: "Action needed" }],
+    };
+  }
+
+  if (user.role === "Government Official") {
+    const dept = user.profile?.department || null;
+    const deptChallenges = visible.filter((c) => !dept || c.dept === dept);
+    const myDrafts = deptChallenges.filter((c) => c.createdBy === user.id && ["Draft", "Changes Requested"].includes(c.status));
+    const deptApps = applications.filter((a) => deptChallenges.some((c) => c.id === a.challengeId));
+    const deptPilots = pilotDesigns.filter((p) => deptChallenges.some((c) => c.id === p.challengeId));
+    const deptContracts = contracts.filter((c) => deptChallenges.some((ch) => ch.id === c.challengeId));
+    const pendingMilestones = deptContracts.flatMap((c) => c.milestones || []).filter((m) => ["Submitted", "Approval Pending"].includes(m.status));
+
+    return {
+      role: user.role,
+      name: user.name,
+      metrics: [
+        { label: "Active challenges" + (dept ? ` — ${dept}` : ""), value: String(deptChallenges.filter((c) => !["Draft"].includes(c.status)).length), sub: `${myDrafts.length} draft(s) of yours need work`, icon: "Target" },
+        { label: "Applications received", value: String(deptApps.length), sub: `${deptApps.filter((a) => a.status === "Eligibility Passed").length} eligible`, icon: "FileText" },
+        { label: "Pilots in progress", value: String(deptPilots.length), sub: dept || "All departments", icon: "FlaskConical" },
+        { label: "Milestone payments pending", value: String(pendingMilestones.length), sub: "Awaiting approval or submission", icon: "Wallet" },
+      ],
+      tasksTitle: "Needs your attention",
+      tasks: myDrafts.map((c) => ({ id: c.id, title: c.title || "Untitled draft", meta: c.dept, status: c.status })),
+    };
+  }
+
+  if (user.role === "Expert Evaluator") {
+    const myEvaluations = evaluations.filter((e) => e.evaluatorName === user.name);
+    const evaluationStageChallenges = visible.filter((c) => c.status === "Expert Evaluation");
+    const pendingReviews = [];
+    for (const c of evaluationStageChallenges) {
+      const eligibleApps = applications.filter((a) => a.challengeId === c.id && a.status === "Eligibility Passed");
+      for (const a of eligibleApps) {
+        const alreadyScored = myEvaluations.some((e) => e.challengeId === c.id && e.startupId === a.startupId);
+        if (!alreadyScored) {
+          const startup = findStartupById(a.startupId);
+          pendingReviews.push({ id: a.id, title: `${startup ? startup.name : a.startupId} — ${c.title}`, meta: c.dept, status: "Needs your score" });
+        }
+      }
+    }
+    const avgTotal = myEvaluations.length ? (myEvaluations.reduce((s, e) => s + (e.total || 0), 0) / myEvaluations.length).toFixed(1) : "—";
+
+    return {
+      role: user.role,
+      name: user.name,
+      metrics: [
+        { label: "Reviews waiting on you", value: String(pendingReviews.length), sub: `${evaluationStageChallenges.length} challenge(s) in evaluation`, icon: "ClipboardCheck" },
+        { label: "Your completed evaluations", value: String(myEvaluations.length), sub: "All-time", icon: "CheckCircle2" },
+        { label: "Your average score given", value: String(avgTotal), sub: "Out of 100", icon: "Gauge" },
+      ],
+      tasksTitle: "Your review queue",
+      tasks: pendingReviews,
+    };
+  }
+
+  if (user.role === "Validation Agency") {
+    // Note: the dedicated Independent Validation workspace runs as its own
+    // sandboxed module with its own actor/session model (see
+    // backend/src/validation/*), separate from the main sign-in system, so
+    // per-user assignment isn't available here. These are real, live,
+    // platform-wide counts rather than a per-user queue.
+    const validationStage = visible.filter((c) => c.status === "Independent Validation");
+    const pilotsAwaitingValidation = pilotDesigns.filter((p) => {
+      const c = findChallengeById(p.challengeId);
+      return c && c.status === "Independent Validation";
+    });
+
+    return {
+      role: user.role,
+      name: user.name,
+      metrics: [
+        { label: "Challenges in independent validation", value: String(validationStage.length), sub: "Platform-wide", icon: "ShieldCheck" },
+        { label: "Pilots awaiting a validation decision", value: String(pilotsAwaitingValidation.length), sub: "Platform-wide", icon: "FlaskConical" },
+      ],
+      tasksTitle: "Pilots awaiting validation",
+      tasks: pilotsAwaitingValidation.map((p) => {
+        const c = findChallengeById(p.challengeId);
+        const s = findStartupById(p.startupId);
+        return { id: p.id, title: `${s ? s.name : p.startupId} — ${c ? c.title : p.challengeId}`, meta: c ? c.dept : "", status: "Awaiting decision" };
+      }),
+    };
+  }
+
+  // Platform Admin — real platform-wide totals; the only role with visibility
+  // into every department's pipeline (matches NAV_BY_ROLE on the frontend).
+  const usersByRole = {};
+  for (const u of db.users || []) usersByRole[u.role] = (usersByRole[u.role] || 0) + 1;
+  const underReview = challenges.filter((c) => c.status === "Under Review");
+  const allMilestones = contracts.flatMap((c) => c.milestones || []);
+  const overdueMilestones = allMilestones.filter((m) => m.status === "Overdue");
+
+  return {
+    role: user.role,
+    name: user.name,
+    metrics: [
+      { label: "Registered startups", value: String(startups.length), sub: `${startups.filter((s) => s.dpiit).length} DPIIT recognised`, icon: "Rocket" },
+      { label: "Total challenges", value: String(challenges.length), sub: `${challenges.filter((c) => c.status === "Published").length} published`, icon: "Target" },
+      { label: "Drafts awaiting independent review", value: String(underReview.length), sub: "Platform-wide", icon: "AlertTriangle" },
+      { label: "Registered users", value: String((db.users || []).length), sub: Object.entries(usersByRole).map(([r, n]) => `${n} ${r}`).join(" · "), icon: "Users" },
+      { label: "Milestone payments overdue", value: String(overdueMilestones.length), sub: `of ${allMilestones.length} total`, icon: "AlertTriangle" },
+    ],
+    tasksTitle: "Drafts awaiting independent review",
+    tasks: underReview.map((c) => ({ id: c.id, title: c.title || "Untitled draft", meta: c.dept, status: c.status })),
+  };
+}
+
+router.get("/dashboard/summary", requireAuth, (req, res) => {
+  const db = readDB();
+  res.json(buildDashboardSummary(db, req.user));
 });
 
 /* --------------------------------- Admin -------------------------------- */

@@ -462,17 +462,6 @@ const CHALLENGES = [
   { id: "MH-WT-0007", title: "Decentralised water-quality monitoring", dept: "Water Resources", status: "Independent Validation", apps: 17, budget: "₹22 L", deadline: "Closed", theme: "CleanTech", risk: "Medium" },
 ];
 
-const STARTUPS = [
-  { name: "AgriSense Labs", sector: "AgriTech · AI/ML", trl: "TRL 6", recog: "DPIIT Recognised", pilots: 3, rating: 4.6, badge: "Eligible", loc: "Pune, MH", tags: ["AgriTech", "AI/ML"], registered: true, dpiit: true, yearsActive: 4, certifications: ["ISO 27001", "DPIIT Certificate"] },
-  { name: "NirogStream", sector: "HealthTech · IoT", trl: "TRL 5", recog: "DPIIT Recognised", pilots: 1, rating: 4.2, badge: "Eligible", loc: "Nagpur, MH", tags: ["HealthTech", "IoT"], registered: true, dpiit: true, yearsActive: 2, certifications: ["DPIIT Certificate"] },
-  { name: "TrackNova", sector: "Mobility · GPS/Analytics", trl: "TRL 7", recog: "Startup India Seed Funded", pilots: 5, rating: 4.8, badge: "Verified", loc: "Mumbai, MH", tags: ["Mobility", "Analytics"], registered: true, dpiit: true, yearsActive: 4, certifications: ["ISO 27001", "DPIIT Certificate"] },
-  { name: "JalMitra", sector: "CleanTech · Sensors", trl: "TRL 6", recog: "DPIIT Recognised", pilots: 2, rating: 4.4, badge: "Eligible", loc: "Aurangabad, MH", tags: ["CleanTech", "IoT"], registered: true, dpiit: true, yearsActive: 3, certifications: ["ISO 27001", "DPIIT Certificate"] },
-  { name: "SkillBridge AI", sector: "EdTech · NLP", trl: "TRL 4", recog: "DPIIT Recognised", pilots: 0, rating: "New", badge: "Under Review", loc: "Nashik, MH", tags: ["EdTech", "AI/ML"], registered: true, dpiit: true, yearsActive: 1, certifications: ["DPIIT Certificate"] },
-  { name: "MarketLinkr", sector: "AgriTech · Marketplace", trl: "TRL 7", recog: "Incubator Certified", pilots: 4, rating: 4.5, badge: "Verified", loc: "Kolhapur, MH", tags: ["AgriTech", "Marketplace"], registered: true, dpiit: false, yearsActive: 6, certifications: ["ISO 27001"] },
-  { name: "RouteWise Tech", sector: "Mobility · Crowd-sourced Data", trl: "TRL 5", recog: "DPIIT Recognised", pilots: 1, rating: 4.0, badge: "Under Review", loc: "Thane, MH", tags: ["Mobility", "AI/ML"], registered: true, dpiit: true, yearsActive: 3, certifications: [] },
-  { name: "PathAI", sector: "Mobility · Computer Vision", trl: "TRL 4", recog: "None", pilots: 0, rating: 3.4, badge: "Under Review", loc: "Nagpur, MH", tags: ["Mobility", "AI/ML"], registered: true, dpiit: false, yearsActive: 11, certifications: [] },
-];
-
 // NOTE: AI Startup Discovery matching and Auto-Eligibility Screening logic
 // used to live here as client-side functions. Both now run on the backend
 // (see /backend/src/matching.js and /backend/src/eligibility.js) — the two
@@ -965,6 +954,10 @@ function AuthGate({ initialMode = "login", initialRole = "Startup", nextView, on
   const set = (k) => (e) => setFields((f) => ({ ...f, [k]: e.target.value }));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  // Checked by default: once someone has registered, they shouldn't have to
+  // register or sign back in again on this device. Unchecking opts back into
+  // the shorter, more cautious 8-hour session (e.g. a shared computer).
+  const [rememberMe, setRememberMe] = useState(true);
 
   // Lightweight client-side checks so obviously-incomplete submissions never
   // round-trip to the server — the backend still re-validates everything
@@ -1003,8 +996,8 @@ function AuthGate({ initialMode = "login", initialRole = "Startup", nextView, on
     setSubmitting(true);
     try {
       const res = mode === "login"
-        ? await api.login(fields.email.trim(), fields.password)
-        : await api.register({ ...fields, role, email: fields.email.trim(), name: fields.name.trim() });
+        ? await api.login(fields.email.trim(), fields.password, rememberMe)
+        : await api.register({ ...fields, role, email: fields.email.trim(), name: fields.name.trim(), rememberMe });
       onAuthenticated(res.user, nextView);
     } catch (err) {
       setError(err.message);
@@ -1079,6 +1072,11 @@ function AuthGate({ initialMode = "login", initialRole = "Startup", nextView, on
               </Field>
             </>
           )}
+
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: C.inkSoft, marginBottom: 14, cursor: "pointer", userSelect: "none" }}>
+            <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} style={{ width: 14, height: 14 }} />
+            Keep me signed in on this device
+          </label>
 
           {error && <div role="alert" style={{ fontSize: 12.5, color: C.rust, background: `${C.rust}10`, padding: "9px 11px", borderRadius: 5, marginBottom: 14 }}>{error}</div>}
 
@@ -1299,44 +1297,34 @@ function Unauthorized({ role, onBack }) {
 /* ---------------------------------------------------------------------- */
 /*  DASHBOARD                                                              */
 /* ---------------------------------------------------------------------- */
+const DASHBOARD_ICONS = {
+  Target, Rocket, FileText, ClipboardCheck, FlaskConical, Wallet, ShieldCheck,
+  AlertTriangle, Users, Gauge, CheckCircle2, IndianRupee,
+};
+
 function Dashboard({ role, name, onOpenChallenge, setView }) {
-  const metrics = {
-    "Government Official": [
-      { label: "Active Challenges", value: "32", icon: Target, sub: "+4 this month" },
-      { label: "Applications Received", value: "241", icon: FileText, sub: "128 startups" },
-      { label: "Pilots in Progress", value: "18", icon: FlaskConical, sub: "6 depts" },
-      { label: "Avg. Challenge → Pilot Time", value: "37 d", icon: Gauge, sub: "↓ 12d vs last cycle" },
-      { label: "Payments Pending", value: "₹19.4 L", icon: Wallet, sub: "4 invoices" },
-      { label: "Compliance Score", value: "94%", icon: BadgeCheck, sub: "Legal-approved templates used" },
-    ],
-    "Startup": [
-      { label: "Open Challenges Matching You", value: "11", icon: Target, sub: "Based on sector tags" },
-      { label: "Applications Submitted", value: "6", icon: FileText, sub: "2 shortlisted" },
-      { label: "Active Pilots", value: "1", icon: FlaskConical, sub: "TrackNova · Transport Dept." },
-      { label: "Milestones Completed", value: "3 / 4", icon: CheckCircle2, sub: "M4 due 15 Feb" },
-      { label: "Payments Received", value: "₹4.0 L", icon: IndianRupee, sub: "₹6.5L pending approval" },
-      { label: "Profile Rating", value: "4.8", icon: Star, sub: "Verified · 5 past pilots" },
-    ],
-    "Expert Evaluator": [
-      { label: "Assigned Reviews", value: "9", icon: ClipboardCheck, sub: "3 due this week" },
-      { label: "Completed Evaluations", value: "47", icon: CheckCircle2, sub: "This cycle" },
-      { label: "Avg. Turnaround", value: "3.2 d", icon: Clock, sub: "SLA: 5 days" },
-      { label: "Conflict Declarations", value: "0", icon: ShieldAlert, sub: "None flagged" },
-    ],
-    "Validation Agency": [
-      { label: "Pilots Assigned", value: "6", icon: FlaskConical, sub: "2 site visits due" },
-      { label: "Validation Reports Filed", value: "14", icon: FileCheck2, sub: "This year" },
-      { label: "Recommendation Split", value: "71% Scale", icon: TrendingUp, sub: "20% Revise · 9% Stop" },
-      { label: "Flags Raised", value: "2", icon: AlertTriangle, sub: "Under department review" },
-    ],
-    "Platform Admin": [
-      { label: "Departments Onboarded", value: "18", icon: Building2, sub: "Maharashtra state-wide" },
-      { label: "Registered Startups", value: "128", icon: Rocket, sub: "+9 this month" },
-      { label: "SLA Breaches", value: "5", icon: AlertTriangle, sub: "Payment stage" },
-      { label: "Bottleneck: Eligibility Screening", value: "6.4 d", icon: Gauge, sub: "Avg. wait, target 3d" },
-    ],
-  };
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  // Real, role-scoped data from the backend (see GET /api/dashboard/summary)
+  // — re-fetched on every mount, so a startup's own registration/application,
+  // an evaluator's own submitted scores, or a department's own drafts show up
+  // here as soon as they're saved, without any hard-coded numbers per role.
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    api.getDashboardSummary()
+      .then((res) => { if (!cancelled) { setSummary(res); setError(null); } })
+      .catch((err) => { if (!cancelled) setError(err.message); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [role]);
+
   const metricTones = [C.brass, C.teal, C.violet, C.blue, C.rust, C.teal];
+  const metrics = summary?.metrics || [];
+  const tasks = summary?.tasks || [];
+  const tasksTitle = summary?.tasksTitle || "Your tasks";
 
   return (
     <div>
@@ -1368,34 +1356,56 @@ function Dashboard({ role, name, onOpenChallenge, setView }) {
         right={role === "Government Official" && <Btn icon={Plus} onClick={() => setView("create-challenge")}>New Challenge</Btn>}
       />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))", gap: 12, marginBottom: 24 }}>
-        {(metrics[role] || metrics["Government Official"]).map((m, i) => <Metric key={m.label} {...m} tone={m.tone || metricTones[i % metricTones.length]} />)}
+        {loading && !summary && [0, 1, 2, 3].map((i) => (
+          <div key={i} style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 10, padding: 18, height: 92, opacity: 0.5 }} />
+        ))}
+        {!loading && error && (
+          <div style={{ gridColumn: "1 / -1", fontSize: 12.5, color: C.rust, background: `${C.rust}10`, padding: "10px 12px", borderRadius: 6 }}>
+            Couldn't load your dashboard data ({error}). <span style={{ textDecoration: "underline", cursor: "pointer" }} onClick={() => setView(role)}>Retry</span>
+          </div>
+        )}
+        {metrics.map((m, i) => (
+          <Metric key={m.label} label={m.label} value={m.value} sub={m.sub} icon={DASHBOARD_ICONS[m.icon] || Target} tone={metricTones[i % metricTones.length]} />
+        ))}
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 18 }}>
         <Card>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
-            <div style={{ fontWeight: 700, fontSize: 14.5 }}>Challenges requiring attention</div>
-            <span onClick={() => setView("challenges")} style={{ fontSize: 12.5, color: C.brass, fontWeight: 600, cursor: "pointer" }}>View all →</span>
+            <div style={{ fontWeight: 700, fontSize: 14.5 }}>{tasksTitle}</div>
+            {role !== "Startup" && <span onClick={() => setView("challenges")} style={{ fontSize: 12.5, color: C.brass, fontWeight: 600, cursor: "pointer" }}>View all →</span>}
           </div>
-          <ChallengeTable rows={CHALLENGES.slice(0, 5)} onOpen={onOpenChallenge} compact />
+          {tasks.length === 0 && !loading ? (
+            <p style={{ fontSize: 12.5, color: C.inkSoft, textAlign: "center", padding: "28px 0" }}>Nothing needs your attention right now.</p>
+          ) : (
+            <div>
+              {tasks.map((t) => (
+                <div key={t.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: `1px solid ${C.line}` }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: C.ink }}>{t.title}</div>
+                    {t.meta && <div style={{ fontSize: 11.5, color: C.inkSoft, marginTop: 2 }}>{t.meta}</div>}
+                  </div>
+                  <StatusChip label={t.status} small />
+                </div>
+              ))}
+            </div>
+          )}
         </Card>
 
         <Card>
-          <div style={{ fontWeight: 700, fontSize: 14.5, marginBottom: 12 }}>Risk & compliance snapshot</div>
-          {[
-            { l: "Pilots with unresolved risk flags", v: "2", tone: C.rust },
-            { l: "Milestone payments overdue", v: "1", tone: C.rust },
-            { l: "Templates pending legal approval", v: "1", tone: C.brass },
-            { l: "Validated pilots ready to scale", v: "3", tone: C.teal },
-          ].map((r) => (
-            <div key={r.l} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 0", borderBottom: `1px solid ${C.line}` }}>
-              <span style={{ fontSize: 12.5, color: C.inkSoft }}>{r.l}</span>
-              <span style={{ fontWeight: 700, color: r.tone }}>{r.v}</span>
-            </div>
-          ))}
-          <Btn variant="secondary" style={{ marginTop: 14, width: "100%", justifyContent: "center" }} icon={ShieldCheck} small>
-            Open audit log
-          </Btn>
+          <div style={{ fontWeight: 700, fontSize: 14.5, marginBottom: 12 }}>Quick actions</div>
+          {(NAV_BY_ROLE[role] || []).filter((v) => v !== "dashboard").map((v) => {
+            const item = NAV.find((n) => n.key === v);
+            if (!item) return null;
+            return (
+              <div key={v} onClick={() => setView(v)}
+                style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 4px", borderBottom: `1px solid ${C.line}`, cursor: "pointer" }}>
+                <item.icon size={15} color={C.inkSoft} />
+                <span style={{ fontSize: 12.8, color: C.ink, fontWeight: 600 }}>{item.label}</span>
+                <ChevronRight size={14} color={C.inkSoft} style={{ marginLeft: "auto" }} />
+              </div>
+            );
+          })}
         </Card>
       </div>
     </div>

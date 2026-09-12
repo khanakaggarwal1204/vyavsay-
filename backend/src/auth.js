@@ -42,7 +42,9 @@ export const GOV_EMAIL_DOMAINS = ["gov.in", "nic.in", "maharashtra.gov.in", "dig
 const CIN_REGEX = /^[LU]\d{5}[A-Z]{2}\d{4}[A-Z]{3}\d{6}$/;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
+const SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours — default, no "remember me"
+const REMEMBER_ME_TTL_MS = 365 * 24 * 60 * 60 * 1000; // 1 year — "remember me" sessions
+export { SESSION_TTL_MS, REMEMBER_ME_TTL_MS };
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_MS = 15 * 60 * 1000; // 15 minutes
 
@@ -134,10 +136,11 @@ export function verifyRegistration(role, fields, db) {
 
 /* --------------------------------- Sessions ------------------------------ */
 
-export function createSession(db, userId) {
+export function createSession(db, userId, rememberMe = false) {
   db.sessions = db.sessions || [];
   const token = randomUUID();
-  db.sessions.push({ token, userId, expiresAt: new Date(Date.now() + SESSION_TTL_MS).toISOString() });
+  const ttl = rememberMe ? REMEMBER_ME_TTL_MS : SESSION_TTL_MS;
+  db.sessions.push({ token, userId, rememberMe: !!rememberMe, expiresAt: new Date(Date.now() + ttl).toISOString() });
   return token;
 }
 
@@ -145,6 +148,12 @@ export function findSession(db, token) {
   const session = (db.sessions || []).find((s) => s.token === token);
   if (!session) return null;
   if (new Date(session.expiresAt).getTime() < Date.now()) return null;
+  // Sliding expiry: a "remember me" session that's still being actively used
+  // gets pushed another full REMEMBER_ME_TTL_MS out, so a returning user never
+  // hits a surprise expiry as long as they open the app at least once a year.
+  if (session.rememberMe) {
+    session.expiresAt = new Date(Date.now() + REMEMBER_ME_TTL_MS).toISOString();
+  }
   return session;
 }
 
