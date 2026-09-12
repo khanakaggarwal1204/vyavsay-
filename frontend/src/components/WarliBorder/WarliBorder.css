@@ -1,0 +1,36 @@
+.warli-border {
+  display: block;
+  width: 100%;
+  height: var(--warli-height, 52px);
+  overflow: hidden;
+  line-height: 0;
+  background: #7a1f1f;
+  color: #f5e6c8;
+}
+
+.warli-border svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Optional subtle separation from page content */
+.warli-border--top {
+  border-bottom: 1px solid rgba(245, 230, 200, 0.45);
+}
+
+.warli-border--bottom {
+  border-top: 1px solid rgba(245, 230, 200, 0.45);
+}
+
+@media (max-width: 600px) {
+  .warli-border {
+    height: min(var(--warli-height, 52px), 44px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .warli-border * {
+    animation: none !important;
+  }
+}
