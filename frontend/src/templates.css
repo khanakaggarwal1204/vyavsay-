@@ -255,3 +255,18 @@
     padding: 12px !important;
   }
 }
+
+/* Shared Vyavsay heritage palette */
+.templates-workspace { color: #06305c; }
+.templates-workspace button,
+.tpl-actions a,
+.templates-workspace input:not([type="checkbox"]),
+.templates-workspace select,
+.templates-workspace textarea { background: #fffdfa; border-color: #cdb58f; color: #06305c; }
+.templates-workspace .tpl-primary,
+.templates-workspace button[aria-pressed="true"] { background: #df7200; border-color: #df7200; color: #fff; }
+.tpl-account,
+.tpl-layout,
+.tpl-records,
+.tpl-result { border-color: #e7d7c1; }
+.tpl-error { background: #fce5e1; border-left-color: #a62b24; color: #a62b24; }

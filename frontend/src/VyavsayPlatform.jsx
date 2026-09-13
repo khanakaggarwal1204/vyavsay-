@@ -11,7 +11,7 @@ import {
   AlertTriangle, MapPin, Calendar, Building2, Users, Star, Download, Upload,
   Eye, X, ChevronRight, BadgeCheck, Landmark, FileCheck2, IndianRupee,
   ShieldAlert, UserCheck, Layers, ScrollText, Gauge, ArrowUpRight, Info,
-  ChevronLeft, Sparkles, Lock, Globe, RefreshCw,
+  ChevronLeft, Sparkles, Lock, Globe, RefreshCw, Menu,
 } from "lucide-react";
 import { api } from "./api.js";
 import { SAFE_GUIDE_AVATAR } from "./guideAsset.js";
@@ -22,19 +22,19 @@ import { LANGUAGES, t } from "./i18n.js";
 /* ---------------------------------------------------------------------- */
 const C = {
   ink: "#06305C",
-  inkSoft: "#516882",
-  paper: "#F1F8FD",
-  surface: "#FFFFFF",
-  line: "#D9E7F2",
-  lineStrong: "#AFC7DA",
-  brass: "#D07A1F",
-  brassSoft: "#FFF2DF",
-  teal: "#068B69",
-  tealSoft: "#E0F6EE",
-  rust: "#B42318",
-  rustSoft: "#FDE7E4",
-  navySoft: "#E6F0FA",
-  skySoft: "#E8F6FF",
+  inkSoft: "#4C6175",
+  paper: "#FBF6ED",
+  surface: "#FFFDFA",
+  line: "#E7D7C1",
+  lineStrong: "#CDB58F",
+  brass: "#DF7200",
+  brassSoft: "#FFF0D6",
+  teal: "#087A58",
+  tealSoft: "#DDF3E7",
+  rust: "#A62B24",
+  rustSoft: "#FCE5E1",
+  navySoft: "#E8EEF4",
+  skySoft: "#F7E9D6",
   blue: "#0B5CAD",
   blueSoft: "#E5F1FC",
   violet: "#6B4FD6",
@@ -42,6 +42,9 @@ const C = {
 };
 
 const FONT_IMPORT = `@import url('https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700;800&family=Roboto:wght@400;500;600;700&display=swap');
+html, body, #root { margin: 0; width: 100%; min-width: 0; min-height: 100%; }
+body { box-sizing: border-box; overflow-x: hidden; }
+*, *::before, *::after { box-sizing: inherit; }
 @keyframes vyavsaySpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: no-preference) {
   .vyavsay-chakra-spin { animation: vyavsaySpin 40s linear infinite; transform-origin: 50% 50%; }
@@ -51,7 +54,19 @@ const FONT_IMPORT = `@import url('https://fonts.googleapis.com/css2?family=Noto+
   .vyavsay-public-stepper > * { min-width: 92px !important; flex: 0 0 auto !important; }
 }
 .vyavsay-solve-card:hover { transform: translateY(-2px); box-shadow: 0 16px 34px rgba(6,48,92,0.12) !important; }
+.vyavsay-dashboard-welcome {
+  background-image:
+    linear-gradient(90deg, rgba(255,250,240,.97) 0%, rgba(255,250,240,.88) 45%, rgba(255,250,240,.48) 100%),
+    url("/vyavsay-heritage-wide-bg.png") !important;
+  background-size: cover !important;
+  background-position: center 54% !important;
+  border-color: #DFC49F !important;
+  box-shadow: 0 12px 30px rgba(106,65,22,.11) !important;
+}
 @media (max-width: 760px) {
+  .vyavsay-overview { width: 100vw !important; max-width: 100vw !important; min-width: 0 !important; overflow-x: clip !important; }
+  .vyavsay-overview > header, .vyavsay-overview > .vyavsay-warli-border, .vyavsay-overview > .vyavsay-hero,
+  .vyavsay-overview > section, .vyavsay-overview > footer { width: 100% !important; max-width: 100% !important; }
   .challenge-identification-grid { grid-template-columns: 1fr !important; }
   .challenge-identification-steps { overflow-x: auto; padding-bottom: 4px; }
   .challenge-identification-steps > * { min-width: 130px; flex: 0 0 auto !important; }
@@ -62,24 +77,40 @@ const FONT_IMPORT = `@import url('https://fonts.googleapis.com/css2?family=Noto+
   .vyavsay-solve-content { padding-right: 0 !important; padding-left: 0 !important; }
   .vyavsay-chakra { width: 250px !important; height: 250px !important; left: -145px !important; opacity: 0.4 !important; }
   .vyavsay-guest-nav { display: none !important; }
-  .vyavsay-public-header { padding: 8px 14px !important; gap: 10px !important; }
+  .vyavsay-public-header {
+    padding: 10px 14px 12px !important; gap: 9px !important; min-height: 0 !important;
+    flex-wrap: wrap !important; white-space: normal !important;
+  }
+  .vyavsay-government-identity, .vyavsay-tricolour-mark { display: none !important; }
+  .vyavsay-brand-identity { flex: 1 1 100% !important; width: 100% !important; min-width: 0; justify-content: center; }
+  .vyavsay-brand-identity > div:last-child > div:first-child { font-size: 12px !important; }
   .vyavsay-gov-copy, .vyavsay-brand-tagline, .vyavsay-partner-marks { display: none !important; }
   .vyavsay-header-divider { display: none !important; }
-  .vyavsay-header-actions { margin-left: auto !important; gap: 6px !important; }
-  .vyavsay-header-actions button { padding: 7px 9px !important; font-size: 10.5px !important; }
+  .vyavsay-header-actions { display: grid !important; grid-template-columns: minmax(0,1fr) minmax(0,1fr); width: 100% !important; min-width: 0; margin-left: 0 !important; gap: 7px !important; }
+  .vyavsay-header-actions button { width: 100% !important; min-width: 0; justify-content: center; padding: 9px 5px !important; font-size: clamp(9px, 2.8vw, 11px) !important; white-space: nowrap; }
   .vyavsay-footer-policy-links { gap: 12px !important; justify-content: flex-start !important; overflow-x: auto; }
   .vyavsay-footer-policy-links > * { flex: 0 0 auto; }
   .vyavsay-footer-attribution { grid-template-columns: 1fr !important; }
   .vyavsay-footer-side { justify-content: flex-start !important; }
   .vyavsay-hero {
-    min-height: 560px !important;
-    background-size: contain !important;
+    min-height: 0 !important;
+    width: 100% !important;
     background-position: center center !important;
   }
-  .vyavsay-hero-inner { padding: 26px 18px 28px !important; }
-  .vyavsay-hero-grid { grid-template-columns: 1fr !important; gap: 18px !important; }
-  .vyavsay-hero-title { font-size: clamp(28px, 8vw, 34px) !important; }
+  .vyavsay-hero > [aria-hidden="true"] { background-size: cover !important; background-position: center !important; }
+  .vyavsay-hero-inner { padding: 24px 16px 26px !important; width: 100% !important; max-width: 100% !important; }
+  .vyavsay-hero-grid { grid-template-columns: minmax(0,1fr) !important; gap: 20px !important; }
+  .vyavsay-hero-title { font-size: clamp(27px, 8.4vw, 32px) !important; line-height: 1.1 !important; }
+  .vyavsay-hero-copy { font-size: 14px !important; line-height: 1.48 !important; }
   .vyavsay-hero-logins { gap: 8px 14px !important; flex-wrap: wrap !important; }
+  .vyavsay-hero-card { padding: 15px !important; border-radius: 11px !important; }
+  .vyavsay-hero-stats { gap: 8px !important; }
+  .vyavsay-hero-stat { padding: 11px 12px !important; min-width: 0; }
+  .vyavsay-hero-stat > div:first-child { font-size: 26px !important; }
+  .vyavsay-home-section { padding: 26px 16px 30px !important; }
+  .vyavsay-home-content { padding: 26px 16px 50px !important; }
+  .vyavsay-hero-slogan-row > span { display: none; }
+  .vyavsay-hero-slogan-row { margin-top: 18px !important; }
 }
 @media (min-width: 761px) and (max-width: 1050px) {
   .vyavsay-public-header { padding: 9px 18px !important; gap: 12px !important; }
@@ -114,6 +145,62 @@ const FONT_IMPORT = `@import url('https://fonts.googleapis.com/css2?family=Noto+
   .vyavsay-hero-slogan { font-size: 17px !important; padding: 10px 18px !important; }
   .vyavsay-hero-card { margin-top: 4px; }
   .vyavsay-public-header { min-height: 68px !important; }
+}
+@media (max-width: 900px) {
+  body { overflow-x: hidden; }
+  .vyavsay-app-shell { display: block !important; width: 100%; overflow-x: hidden; }
+  .vyavsay-sidebar {
+    position: fixed !important; inset: 0 auto 0 0; z-index: 60; width: min(82vw, 280px) !important;
+    height: 100dvh !important; transform: translateX(-105%); transition: transform .22s ease;
+    box-shadow: 14px 0 34px rgba(6,48,92,.18);
+  }
+  .vyavsay-sidebar.is-open { transform: translateX(0); }
+  .vyavsay-nav-backdrop { position: fixed; inset: 0; z-index: 55; border: 0; background: rgba(6,25,45,.42); }
+  .vyavsay-mobile-menu { display: grid !important; }
+  .vyavsay-app-main { width: 100%; min-width: 0; }
+  .vyavsay-topbar { height: 58px !important; padding: 0 12px !important; gap: 9px !important; }
+  .vyavsay-topbar-search { max-width: none !important; min-width: 0; }
+  .vyavsay-topbar-search input { font-size: 12px !important; }
+  .vyavsay-topbar-spacer { display: none; }
+  .vyavsay-account-name { display: none; }
+  .vyavsay-account-trigger { padding: 5px 7px !important; }
+  .vyavsay-account-menu { position: fixed !important; left: 12px !important; right: 12px !important; top: 62px !important; width: auto !important; }
+  .vyavsay-verification-banner { padding: 9px 12px !important; align-items: flex-start !important; }
+  .vyavsay-main-content { padding: 16px 12px 84px !important; max-width: none !important; width: 100%; box-sizing: border-box; }
+  .vyavsay-main-content h1 { font-size: clamp(22px, 7vw, 27px) !important; overflow-wrap: anywhere; }
+  .vyavsay-main-content h2 { overflow-wrap: anywhere; }
+  .vyavsay-main-content > * { min-width: 0; }
+  .vyavsay-main-content [style*="grid-template-columns"] { grid-template-columns: minmax(0, 1fr) !important; }
+  .vyavsay-main-content [style*="width: 340"],
+  .vyavsay-main-content [style*="width: 360"],
+  .vyavsay-main-content [style*="width: 270"] { width: 100% !important; max-width: 100% !important; }
+  .vyavsay-main-content input, .vyavsay-main-content select, .vyavsay-main-content textarea { max-width: 100%; }
+  .vyavsay-main-content table { display: block; max-width: 100%; overflow-x: auto; white-space: nowrap; }
+  .vyavsay-mobile-scroll { max-width: 100%; overflow-x: auto; scrollbar-width: thin; }
+  .vyavsay-dashboard-hero-art { display: none; }
+  .vyavsay-dashboard-welcome {
+    background-image:
+      linear-gradient(90deg, rgba(255,250,240,.96), rgba(255,250,240,.78)),
+      url("/vyavsay-heritage-wide-bg.png") !important;
+    background-position: 58% center !important;
+  }
+  .vyavsay-dashboard-columns { grid-template-columns: minmax(0,1fr) !important; }
+  .vyavsay-challenge-tabs { overflow-x: auto; white-space: nowrap; scrollbar-width: thin; }
+  .vyavsay-challenge-tabs > * { flex: 0 0 auto; }
+  .vyavsay-challenge-actions { text-align: left !important; width: 100%; }
+  .vyavsay-challenge-actions > div { justify-content: flex-start; flex-wrap: wrap; }
+}
+@media (max-width: 480px) {
+  .vyavsay-topbar-search input::placeholder { color: transparent; }
+  .vyavsay-topbar-search { flex: 1 1 auto !important; }
+  .vyavsay-main-content { padding-inline: 10px !important; }
+  .vyavsay-main-content [style*="padding: 22"] { padding: 15px !important; }
+  .assistant-launcher { right: 10px !important; bottom: 10px !important; padding: 5px !important; }
+  .assistant-launcher-label, .assistant-launcher > svg { display: none !important; }
+}
+@media (max-width: 340px) {
+  .vyavsay-header-actions { grid-template-columns: minmax(0,1fr); }
+  .vyavsay-hero-stats { grid-template-columns: minmax(0,1fr) !important; }
 }
 `;
 
@@ -307,7 +394,7 @@ function Card({ children, style, className = "", noPad, onClick }) {
       onMouseLeave={onClick ? () => setHover(false) : undefined}
       style={{
         background: C.surface, border: `1px solid ${C.line}`, borderRadius: 6,
-        boxShadow: hover ? "0 14px 34px rgba(6,48,92,0.12)" : "0 10px 28px rgba(6,48,92,0.055)",
+        boxShadow: hover ? "0 14px 34px rgba(91,54,18,0.14)" : "0 8px 24px rgba(91,54,18,0.07)",
         padding: noPad ? 0 : 18,
         cursor: onClick ? "pointer" : undefined,
         transform: hover ? "translateY(-2px)" : "translateY(0)",
@@ -328,7 +415,7 @@ function Btn({ children, variant = "primary", icon: Icon, onClick, small, style,
     opacity: disabled ? 0.55 : 1,
   };
   const variants = {
-    primary: { background: C.ink, color: "#fff" },
+    primary: { background: C.brass, color: "#fff" },
     brass: { background: C.brass, color: "#fff" },
     secondary: { background: "#fff", color: C.ink, border: `1px solid ${C.lineStrong}` },
     ghost: { background: "transparent", color: C.inkSoft },
@@ -363,9 +450,9 @@ function SectionTitle({ eyebrow, title, right }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
       <div style={{ display: "flex", alignItems: "stretch", gap: 10 }}>
-        <div style={{ width: 4, borderRadius: 2, background: C.blue }} />
+        <div style={{ width: 4, borderRadius: 2, background: C.rust }} />
         <div>
-          {eyebrow && <div style={{ fontSize: 11.5, color: C.blue, fontWeight: 700, letterSpacing: 0, marginBottom: 3 }}>{eyebrow}</div>}
+          {eyebrow && <div style={{ fontSize: 11.5, color: C.rust, fontWeight: 700, letterSpacing: 0, marginBottom: 3 }}>{eyebrow}</div>}
           <h2 style={{ ...serif, fontSize: 24, color: C.ink, margin: 0 }}>{title}</h2>
         </div>
       </div>
@@ -414,17 +501,30 @@ function BrandMark({ light = false, size = 34 }) {
   );
 }
 
-function AshokaPillarMark() {
+function SidebarBrand() {
   return (
-    <svg viewBox="0 0 32 40" width="24" height="30" fill="none" aria-hidden="true" style={{ flex: "0 0 auto" }}>
-      <circle cx="16" cy="6" r="3.2" fill={C.ink} />
-      <circle cx="10.5" cy="8" r="2.7" fill={C.ink} />
-      <circle cx="21.5" cy="8" r="2.7" fill={C.ink} />
-      <path d="M8 12h16l-2.2 7H10.2L8 12Z" fill={C.ink} />
-      <path d="M11 20h10v3H11zM8.5 25h15v2.8h-15z" fill={C.ink} />
-      <circle cx="16" cy="31.5" r="3.3" stroke={C.ink} strokeWidth="1.4" />
-      <path d="M16 28.2v6.6M12.7 31.5h6.6M13.7 29.2l4.6 4.6M18.3 29.2l-4.6 4.6" stroke={C.ink} strokeWidth=".8" />
-      <path d="M7 36h18M9 38.5h14" stroke={C.ink} strokeWidth="2" strokeLinecap="round" />
+    <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+      <AshokaPillarMark color="#A96A2A" width={28} height={35} />
+      <div style={{ minWidth: 0, lineHeight: 1.04 }}>
+        <div style={{ color: C.ink, fontSize: 17, fontWeight: 900, letterSpacing: ".025em" }}>VYAVSAY</div>
+        <div style={{ color: C.inkSoft, fontSize: 8.2, fontWeight: 650, marginTop: 3 }}>Innovate Maharashtra</div>
+        <div style={{ color: C.inkSoft, fontSize: 8.2, fontWeight: 650, marginTop: 1 }}>Stronger Tomorrow</div>
+      </div>
+    </div>
+  );
+}
+
+function AshokaPillarMark({ color = C.ink, width = 24, height = 30 }) {
+  return (
+    <svg viewBox="0 0 32 40" width={width} height={height} fill="none" aria-hidden="true" style={{ flex: "0 0 auto" }}>
+      <circle cx="16" cy="6" r="3.2" fill={color} />
+      <circle cx="10.5" cy="8" r="2.7" fill={color} />
+      <circle cx="21.5" cy="8" r="2.7" fill={color} />
+      <path d="M8 12h16l-2.2 7H10.2L8 12Z" fill={color} />
+      <path d="M11 20h10v3H11zM8.5 25h15v2.8h-15z" fill={color} />
+      <circle cx="16" cy="31.5" r="3.3" stroke={color} strokeWidth="1.4" />
+      <path d="M16 28.2v6.6M12.7 31.5h6.6M13.7 29.2l4.6 4.6M18.3 29.2l-4.6 4.6" stroke={color} strokeWidth=".8" />
+      <path d="M7 36h18M9 38.5h14" stroke={color} strokeWidth="2" strokeLinecap="round" />
     </svg>
   );
 }
@@ -644,16 +744,16 @@ function Overview({ onEnter }) {
   ];
 
   return (
-    <div style={{ background: "linear-gradient(180deg, #FFFDF8 0%, #F8F1E5 100%)" }}>
+    <div className="vyavsay-overview" style={{ background: "linear-gradient(180deg, #FFFDF8 0%, #F8F1E5 100%)", width: "100%", minWidth: 0, overflowX: "hidden" }}>
       <header style={{ background: "#fff", borderBottom: `1px solid ${C.line}`, boxShadow: "0 8px 26px rgba(6,48,92,0.05)" }}>
         <div className="vyavsay-public-header" style={{ width: "100%", boxSizing: "border-box", padding: "12px 30px", display: "flex", alignItems: "center", gap: 16, minHeight: 82, whiteSpace: "nowrap" }}>
-          <div aria-hidden="true" style={{ width: 5, height: 38, borderRadius: 4, overflow: "hidden", flex: "0 0 auto", boxShadow: `0 0 0 1px ${C.line}` }}>
+          <div className="vyavsay-tricolour-mark" aria-hidden="true" style={{ width: 5, height: 38, borderRadius: 4, overflow: "hidden", flex: "0 0 auto", boxShadow: `0 0 0 1px ${C.line}` }}>
             <div style={{ height: "33.333%", background: "#E57A20" }} />
             <div style={{ height: "33.333%", background: "#FFFFFF" }} />
             <div style={{ height: "33.334%", background: "#0F7A3A" }} />
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 7, flex: "0 0 auto" }}>
+          <div className="vyavsay-government-identity" style={{ display: "flex", alignItems: "center", gap: 7, flex: "0 0 auto" }}>
             <AshokaPillarMark />
             <div className="vyavsay-gov-copy" style={{ lineHeight: 1.08 }}>
               <div style={{ fontSize: 10.5, fontWeight: 800, color: C.ink }}>भारत सरकार</div>
@@ -664,7 +764,7 @@ function Overview({ onEnter }) {
 
           <div className="vyavsay-header-divider" aria-hidden="true" style={{ width: 1, height: 38, background: C.lineStrong, flex: "0 0 auto" }} />
 
-          <div style={{ display: "flex", alignItems: "center", gap: 7, flex: "0 0 auto" }}>
+          <div className="vyavsay-brand-identity" style={{ display: "flex", alignItems: "center", gap: 7, flex: "0 0 auto" }}>
             <div style={{ width: 28, height: 28, color: C.ink, flex: "0 0 auto" }}>
               <svg viewBox="0 0 48 48" width="28" height="28" fill="none" aria-hidden="true">
                 <path d="M8 31C12 18 20 11 32 10C26 15 22 22 20 34" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" />
@@ -738,7 +838,7 @@ function Overview({ onEnter }) {
               <h1 className="vyavsay-hero-title" style={{ ...serif, fontSize: "clamp(34px, 2.8vw, 48px)", lineHeight: 1.08, margin: 0, marginBottom: 16, maxWidth: 680, color: C.ink }}>
                 From government problems to startup solutions — <span style={{ color: C.teal }}>faster.</span>
               </h1>
-              <p style={{ fontSize: "clamp(14px, 1vw, 17px)", color: C.ink, lineHeight: 1.5, maxWidth: 680, marginBottom: 20 }}>
+              <p className="vyavsay-hero-copy" style={{ fontSize: "clamp(14px, 1vw, 17px)", color: C.ink, lineHeight: 1.5, maxWidth: 680, marginBottom: 20 }}>
                 Vyavsay is the procurement pathway for challenges that don't fit standard tendering: define the
                 problem, discover eligible startups, run a controlled pilot, pay on verified milestones, get an
                 independent validation report, then decide whether to scale, all on one auditable record.
@@ -755,9 +855,9 @@ function Overview({ onEnter }) {
 
             <Card className="vyavsay-hero-card" style={{ position: "relative", zIndex: 1, padding: 20, borderRadius: 14, background: "rgba(255,250,242,0.91)", border: "1px solid rgba(208,122,31,0.22)", boxShadow: "0 18px 42px rgba(79,52,18,0.12)", backdropFilter: "blur(8px)" }}>
               <div style={{ fontSize: 12, color: C.ink, fontWeight: 900, letterSpacing: 0, marginBottom: 13 }}>PLATFORM AT A GLANCE</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div className="vyavsay-hero-stats" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 {stats.map((s) => (
-                  <div key={s.l} style={{ padding: "14px 16px", borderRadius: 10, background: "rgba(255,255,255,0.26)", border: "1px solid rgba(208,122,31,0.26)" }}>
+                  <div className="vyavsay-hero-stat" key={s.l} style={{ padding: "14px 16px", borderRadius: 10, background: "rgba(255,255,255,0.26)", border: "1px solid rgba(208,122,31,0.26)" }}>
                     <div style={{ ...tabular, fontFamily: "Roboto, Arial, sans-serif", fontSize: 31, fontWeight: 900, color: C.ink }}>{s.v}</div>
                     <div style={{ fontSize: 12, color: C.ink, marginTop: 2, fontWeight: 500 }}>{s.l}</div>
                   </div>
@@ -780,7 +880,7 @@ function Overview({ onEnter }) {
             })}
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14, marginTop: 10 }}>
+          <div className="vyavsay-hero-slogan-row" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14, marginTop: 10 }}>
             <span aria-hidden="true" style={{ width: 52, height: 2, borderRadius: 2, background: "#8f2424" }} />
             <div className="vyavsay-hero-slogan" style={{ maxWidth: 900, flex: "0 1 auto", textAlign: "center", padding: "9px 26px", borderRadius: 999, color: "#8f2424", background: "rgba(255,250,240,0.94)", border: "1px solid rgba(208,122,31,0.22)", boxShadow: "0 6px 18px rgba(79,52,18,0.11)", fontSize: "clamp(17px, 1.5vw, 24px)", lineHeight: 1.22, fontWeight: 900 }}>
               नीति सरकार की, उड़ान स्टार्टअप की — सेतु बने व्यवसाय की
@@ -790,7 +890,7 @@ function Overview({ onEnter }) {
         </div>
       </div>
 
-      <section style={{ position: "relative", overflow: "hidden", background: "rgba(255,252,246,0.94)", borderBottom: "1px solid #E9DDCA", padding: "34px 28px 38px" }} aria-labelledby="schemes-pathways-heading">
+      <section className="vyavsay-home-section" style={{ position: "relative", overflow: "hidden", background: "rgba(255,252,246,0.94)", borderBottom: "1px solid #E9DDCA", padding: "34px 28px 38px" }} aria-labelledby="schemes-pathways-heading">
         <AshokChakraArt />
         <div style={{ position: "relative", zIndex: 1, maxWidth: 1180, margin: "0 auto" }}>
           <div style={{ display: "flex", alignItems: "stretch", gap: 10, marginBottom: 18 }}>
@@ -829,7 +929,7 @@ function Overview({ onEnter }) {
         </div>
       </section>
 
-      <div style={{ maxWidth: 1180, margin: "0 auto", padding: "34px 28px 64px" }}>
+      <div className="vyavsay-home-content" style={{ maxWidth: 1180, margin: "0 auto", padding: "34px 28px 64px" }}>
       <Card style={{ marginBottom: 28, background: "#FFFCF7", border: "1px solid #E9DDCA" }}>
         <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14 }}>The 9-stage pathway every challenge moves through</div>
         <Stepper current="Pilot Design & Contracting" stages={PUBLIC_PATHWAY_STAGES} />
@@ -1131,6 +1231,7 @@ export default function App() {
   const [selectedChallenge, setSelectedChallenge] = useState(null);
   const [editingChallenge, setEditingChallenge] = useState(null);
   const [roleMenuOpen, setRoleMenuOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [authUser, setAuthUser] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [authGate, setAuthGate] = useState(null); // null | { mode, role, nextView }
@@ -1187,6 +1288,10 @@ export default function App() {
     if (entered && !canAccess(role, view)) setView(defaultViewFor(role));
   }, [entered, role, view]);
 
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [view]);
+
   if (!authChecked) return null;
 
   if (!entered) {
@@ -1207,13 +1312,14 @@ export default function App() {
   }
 
   return (
-    <div className={view === "templates" ? "templates-shell" : undefined} style={{ background: C.paper, minHeight: "100vh", color: C.ink, fontFamily: BODY_FONT, fontSize: 14, display: "flex" }}>
+    <div className={`vyavsay-app-shell${view === "templates" ? " templates-shell" : ""}`} style={{ background: C.paper, minHeight: "100vh", color: C.ink, fontFamily: BODY_FONT, fontSize: 14, display: "flex" }}>
       <style>{FONT_IMPORT}</style>
+      {mobileNavOpen && <button className="vyavsay-nav-backdrop" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} />}
       {/* SIDEBAR */}
-      <aside style={{ width: 216, flexShrink: 0, borderRight: `1px solid ${C.line}`, background: "#FAFDFF", position: "sticky", top: 0, height: "100vh", display: "flex", flexDirection: "column" }}>
-        <div style={{ padding: "20px 18px 16px", borderBottom: `1px solid ${C.line}` }}>
+      <aside className={`vyavsay-sidebar${mobileNavOpen ? " is-open" : ""}`} style={{ width: 216, flexShrink: 0, borderRight: `1px solid ${C.line}`, background: "#FFFCF7", position: "sticky", top: 0, height: "100vh", display: "flex", flexDirection: "column" }}>
+        <div style={{ padding: "17px 18px 15px", borderBottom: `1px solid ${C.line}` }}>
           <div onClick={() => setEntered(false)} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }} title="Back to overview">
-            <BrandMark size={30} />
+            <SidebarBrand />
           </div>
         </div>
         <nav style={{ padding: "10px 10px", flex: 1, overflowY: "auto" }}>
@@ -1221,12 +1327,12 @@ export default function App() {
             const active = view === n.key || (n.key === "challenges" && view === "challenge-detail") || (n.key === "challenges" && view === "create-challenge");
             const Icon = n.icon;
             return (
-              <div key={n.key} onClick={() => setView(n.key)}
+              <div key={n.key} onClick={() => { setView(n.key); setMobileNavOpen(false); }}
                 style={{
                   display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 4,
                   cursor: "pointer", marginBottom: 2, fontSize: 13, fontWeight: active ? 700 : 500,
-                  background: active ? C.blueSoft : "transparent", color: active ? C.blue : C.inkSoft,
-                  borderLeft: active ? `3px solid ${C.blue}` : "3px solid transparent",
+                  background: active ? C.rustSoft : "transparent", color: active ? C.rust : C.inkSoft,
+                  borderLeft: active ? `3px solid ${C.rust}` : "3px solid transparent",
                 }}>
                 <Icon size={15} />
                 {t(language, n.label)}
@@ -1243,28 +1349,29 @@ export default function App() {
       </aside>
 
       {/* MAIN */}
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div className="vyavsay-app-main" style={{ flex: 1, minWidth: 0 }}>
         {/* TOPBAR */}
-        <header style={{ height: 64, borderBottom: `1px solid ${C.line}`, background: "rgba(255,255,255,0.92)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", padding: "0 22px", gap: 16, position: "sticky", top: 0, zIndex: 10 }}>
-          <div style={{ flex: 1, maxWidth: 420, position: "relative" }}>
+        <header className="vyavsay-topbar" style={{ height: 64, borderBottom: `1px solid ${C.line}`, background: "#FFFDFA", display: "flex", alignItems: "center", padding: "0 22px", gap: 16, position: "sticky", top: 0, zIndex: 10 }}>
+          <button className="vyavsay-mobile-menu" type="button" aria-label="Open navigation" onClick={() => setMobileNavOpen(true)} style={{ display: "none", placeItems: "center", width: 38, height: 38, padding: 0, border: `1px solid ${C.line}`, borderRadius: 6, background: "#fff", color: C.ink, flexShrink: 0 }}><Menu size={19} /></button>
+          <div className="vyavsay-topbar-search" style={{ flex: 1, maxWidth: 420, position: "relative" }}>
             <Search size={15} style={{ position: "absolute", left: 10, top: 10 }} color={C.inkSoft} />
             <input placeholder={t(language, "Search challenges, startups, departments…")}
-              style={{ ...inputStyle, paddingLeft: 32, background: "#F4FAFF", border: `1px solid ${C.line}`, borderRadius: 999 }} />
+              style={{ ...inputStyle, paddingLeft: 32, background: "#FFF9F0", border: `1px solid ${C.line}`, borderRadius: 999 }} />
           </div>
-          <div style={{ flex: 1 }} />
+          <div className="vyavsay-topbar-spacer" style={{ flex: 1 }} />
           <LanguageSelector language={language} onChange={setLanguage} />
           <Bell size={17} color={C.inkSoft} style={{ cursor: "pointer" }} />
           <div style={{ position: "relative" }}>
-            <div onClick={() => { if (!["validation", "scaleup", "templates"].includes(view)) setRoleMenuOpen((s) => !s); }}
+            <div className="vyavsay-account-trigger" onClick={() => { if (!["validation", "scaleup", "templates"].includes(view)) setRoleMenuOpen((s) => !s); }}
               style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer", border: `1px solid ${C.line}`, borderRadius: 4, padding: "6px 10px" }}>
               <div style={{ width: 22, height: 22, borderRadius: "50%", background: C.brassSoft, color: C.brass, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700 }}>
                 {["validation", "scaleup", "templates"].includes(view) ? "W" : role[0]}
               </div>
-              <div style={{ fontSize: 12.5, fontWeight: 600 }}>{["validation", "scaleup", "templates"].includes(view) ? "Select account in workspace" : (authUser?.name || role)}</div>
+              <div className="vyavsay-account-name" style={{ fontSize: 12.5, fontWeight: 600 }}>{["validation", "scaleup", "templates"].includes(view) ? "Select account in workspace" : (authUser?.name || role)}</div>
               {!["validation", "scaleup", "templates"].includes(view) && <ChevronDown size={14} color={C.inkSoft} />}
             </div>
             {!["validation", "scaleup", "templates"].includes(view) && roleMenuOpen && (
-              <div style={{ position: "absolute", right: 0, top: 38, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 5, width: 236, boxShadow: "0 6px 18px rgba(20,33,61,0.1)", zIndex: 20 }}>
+              <div className="vyavsay-account-menu" style={{ position: "absolute", right: 0, top: 38, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 5, width: 236, boxShadow: "0 6px 18px rgba(20,33,61,0.1)", zIndex: 20 }}>
                 <div style={{ padding: "10px 12px", borderBottom: `1px solid ${C.line}` }}>
                   <div style={{ fontSize: 13, fontWeight: 700 }}>{authUser?.name || role}</div>
                   <div style={{ fontSize: 11, color: C.inkSoft }}>{authUser?.email || "Not signed in"}</div>
@@ -1283,13 +1390,13 @@ export default function App() {
         </header>
 
         {authUser && authUser.verificationStatus !== "Verified" && (
-          <div style={{ background: C.brassSoft, borderBottom: `1px solid ${C.brass}44`, padding: "9px 22px", fontSize: 12.5, color: C.ink, display: "flex", alignItems: "center", gap: 8 }}>
+          <div className="vyavsay-verification-banner" style={{ background: C.brassSoft, borderBottom: `1px solid ${C.brass}44`, padding: "9px 22px", fontSize: 12.5, color: C.ink, display: "flex", alignItems: "center", gap: 8 }}>
             <AlertTriangle size={14} color={C.brass} />
             {authUser.verificationNote || "Your account is pending verification."}
           </div>
         )}
 
-        <main style={{ padding: 26, maxWidth: 1320 }}>
+        <main className="vyavsay-main-content" style={{ padding: 26, maxWidth: 1320 }}>
           {!canAccess(role, view) ? (
             <Unauthorized role={role} onBack={() => setView(defaultViewFor(role))} />
           ) : (
@@ -1370,7 +1477,7 @@ function Dashboard({ role, name, onOpenChallenge, setView }) {
 
   return (
     <div>
-      <Card style={{ position: "relative", overflow: "hidden", marginBottom: 22, minHeight: 138, background: `linear-gradient(110deg, #FFFFFF 0%, ${C.skySoft} 100%)` }}>
+      <Card className="vyavsay-dashboard-welcome" style={{ position: "relative", overflow: "hidden", marginBottom: 22, minHeight: 138 }}>
         <div style={{ position: "relative", zIndex: 1, maxWidth: 620 }}>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 7, background: C.blueSoft, color: C.blue, padding: "5px 9px", borderRadius: 999, fontSize: 11.5, fontWeight: 800, marginBottom: 12 }}>
             <ShieldCheck size={13} /> Trusted government-startup workspace
@@ -1381,15 +1488,6 @@ function Dashboard({ role, name, onOpenChallenge, setView }) {
           <p style={{ fontSize: 13.2, color: C.inkSoft, lineHeight: 1.6, maxWidth: 560, margin: "8px 0 0" }}>
             Track challenges, pilots, contracts, validation evidence and payments through one transparent Vyavsay pipeline.
           </p>
-        </div>
-        <div style={{ position: "absolute", right: 18, bottom: -5, width: 290, opacity: 0.56 }}>
-          <svg viewBox="0 0 320 120" width="100%" height="100%" fill="none" aria-hidden="true">
-            <path d="M4 105H316" stroke="#9EC4DE" strokeWidth="2" />
-            <path d="M188 105V58H227V105M195 58V45H220V58M202 45V35H213V45" fill="#CFE7F8" stroke="#9EC4DE" />
-            <path d="M238 105V70H268V105M279 105V48H304V105M137 105V78H174V105" fill="#E2F2FC" stroke="#B6D4EA" />
-            <path d="M25 105V68H92V105M37 68V53H80V68M48 53V39H69V53" fill="#D7ECFA" stroke="#9EC4DE" />
-            <path d="M20 68H98L89 58H29L20 68Z" fill="#F4C879" />
-          </svg>
         </div>
       </Card>
       <SectionTitle
@@ -1411,7 +1509,7 @@ function Dashboard({ role, name, onOpenChallenge, setView }) {
         ))}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 18 }}>
+      <div className="vyavsay-dashboard-columns" style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 18 }}>
         <Card>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
             <div style={{ fontWeight: 700, fontSize: 14.5 }}>{tasksTitle}</div>
@@ -1574,7 +1672,7 @@ function ChallengeDetail({ ch, onBack, role, onChanged, onEdit }) {
               <span style={{ display: "flex", alignItems: "center", gap: 4 }}><IndianRupee size={13} /> Pilot budget: {ch.budget}</span>
             </div>
           </div>
-          <div style={{ textAlign: "right" }}>
+          <div className="vyavsay-challenge-actions" style={{ textAlign: "right" }}>
             <StatusChip label={ch.status} />
             <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
               <Btn variant="secondary" small>Save / Watch</Btn>
@@ -1588,7 +1686,7 @@ function ChallengeDetail({ ch, onBack, role, onChanged, onEdit }) {
         </div>
       </Card>
 
-      <div style={{ display: "flex", gap: 4, marginBottom: 16, borderBottom: `1px solid ${C.line}` }}>
+      <div className="vyavsay-challenge-tabs" style={{ display: "flex", gap: 4, marginBottom: 16, borderBottom: `1px solid ${C.line}` }}>
         {tabs.map((t) => (
           <div key={t} onClick={() => setTab(t)}
             style={{
@@ -3484,13 +3582,6 @@ function ScaleUp() {
 /*  ADMIN                                                                   */
 /* ---------------------------------------------------------------------- */
 function Admin() {
-  const [mockData, setMockData] = useState(null);
-  const [mockDataError, setMockDataError] = useState(null);
-
-  useEffect(() => {
-    api.getMockData().then(setMockData).catch((error) => setMockDataError(error.message));
-  }, []);
-
   return (
     <div>
       <SectionTitle eyebrow="PLATFORM GOVERNANCE" title="Admin Dashboard" />
@@ -3526,24 +3617,6 @@ function Admin() {
           ))}
         </Card>
       </div>
-      <Card style={{ marginTop: 18 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline", marginBottom: 10 }}>
-          <div style={{ fontWeight: 700 }}>Loaded mock data</div>
-          {mockData && <span style={{ fontSize: 12, color: C.inkSoft }}>{mockData.startups.length} startups · {mockData.governmentOfficials.length} government officials</span>}
-        </div>
-        {mockDataError && <div style={{ color: C.rust, fontSize: 12.5 }}>{mockDataError}</div>}
-        {!mockData && !mockDataError && <div style={{ color: C.inkSoft, fontSize: 12.5 }}>Loading mock records…</div>}
-        {mockData && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 14 }}>
-          <div>
-            <div style={{ fontSize: 11, fontWeight: 800, color: C.inkSoft, marginBottom: 6 }}>STARTUPS</div>
-            {mockData.startups.slice(0, 6).map((startup) => <div key={startup.id} style={{ fontSize: 12.5, padding: "5px 0", borderTop: `1px solid ${C.line}` }}><b>{startup.name}</b><span style={{ color: C.inkSoft }}> · {startup.field} · {startup.trl}</span></div>)}
-          </div>
-          <div>
-            <div style={{ fontSize: 11, fontWeight: 800, color: C.inkSoft, marginBottom: 6 }}>GOVERNMENT OFFICIALS</div>
-            {mockData.governmentOfficials.slice(0, 6).map((official) => <div key={official.id} style={{ fontSize: 12.5, padding: "5px 0", borderTop: `1px solid ${C.line}` }}><b>{official.name}</b><span style={{ color: C.inkSoft }}> · {official.designation}</span></div>)}
-          </div>
-        </div>}
-      </Card>
     </div>
   );
 }
